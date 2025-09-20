@@ -1,0 +1,14 @@
+diff --git a/TEST_PATCH_OK.txt b/TEST_PATCH_OK.txt
+new file mode 100644
+--- /dev/null
++++ b/TEST_PATCH_OK.txt
+@@ -0,0 +9 @@
++This file confirms your patch pipeline works.
++You can delete it after testing.
++
++Steps next:
++ - If you can see this file committed, patches apply fine.
++ - We'll send feature patches in the same format.
++
++Repo: Aplicatie Laser Cut
++OK.
