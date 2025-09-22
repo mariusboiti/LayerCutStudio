@@ -2886,5 +2886,114 @@
   <div id="lcs-test-badge" style="position:fixed;left:12px;bottom:12px;z-index:99999;background:#10b981;color:#fff;padding:6px 10px;border-radius:9999px;font:600 12px/1 system-ui,Segoe UI,Roboto;box-shadow:0 2px 8px rgba(0,0,0,.15);">
     ✅ Build OK • test patch
   </div>
+  <!-- Undo/Redo clasic + auto-push coalesced pentru acțiunile UI -->
+  <script>
+  (function(){
+    // nu instala de 2 ori (HMR/refresh parțial)
+    if (window.__LCS_UNDO_REDO_PATCH__) return;
+    window.__LCS_UNDO_REDO_PATCH__ = true;
+
+    // utilitare
+    var hasStructured = (typeof structuredClone === 'function');
+    function dclone(o){ try { return hasStructured ? structuredClone(o) : JSON.parse(JSON.stringify(o)); } catch(e){ return o; } }
+    function isEditable(el){
+      if (!el) return false;
+      var t = (el.tagName||'').toLowerCase();
+      return ['input','textarea','select'].includes(t) || !!el.isContentEditable;
+    }
+
+    // 1) History adapters + push inițial
+    (function bindAdaptersWithInit(){
+      if (!window.LCS) window.LCS = {};
+      var LCS = window.LCS;
+      // dacă ai deja managerul tău, îl folosim; altfel cream unul minimalist
+      if (!LCS.history) {
+        function HM(){ this.stack=[]; this.index=-1; this._a={getSnapshot:function(){return{};},applySnapshot:function(){}}; }
+        HM.prototype.setAdapters = function(a){ this._a=a||this._a; };
+        HM.prototype.push = function(){ var snap=dclone(this._a.getSnapshot()||{}); if(this.index < this.stack.length-1) this.stack=this.stack.slice(0,this.index+1); this.stack.push(snap); this.index=this.stack.length-1; };
+        HM.prototype.canUndo = function(){ return this.index>0; };
+        HM.prototype.canRedo = function(){ return this.index>=0 && this.index < this.stack.length-1; };
+        HM.prototype.undo = function(){ if(!this.canUndo())return; this.index--; this._a.applySnapshot(dclone(this.stack[this.index])); };
+        HM.prototype.redo = function(){ if(!this.canRedo())return; this.index++; this._a.applySnapshot(dclone(this.stack[this.index])); };
+        LCS.history = new HM();
+      }
+      function tryBind(){
+        if (LCS.__adaptersBoundUndoRedo) return true;
+        if (typeof window.getSnapshot === 'function' && typeof window.applySnapshot === 'function') {
+          LCS.history.setAdapters({
+            getSnapshot: function(){ return window.getSnapshot() || {}; },
+            applySnapshot: function(snap){ window.applySnapshot(snap); }
+          });
+          if (!LCS.__pushedInit) { try { LCS.history.push('init'); } catch(_){ } LCS.__pushedInit = true; }
+          LCS.__adaptersBoundUndoRedo = true;
+          return true;
+        }
+        return false;
+      }
+      if (!tryBind()){
+        var tries = 0, iv = setInterval(function(){ tries++; if (tryBind() || tries>200) clearInterval(iv); }, 50);
+      }
+    })();
+
+    // 2) Shortcuts: Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y  (capturing + preventDefault)
+    if (!window.__LCS_KEYS_BOUND_CLASSIC__){
+      window.__LCS_KEYS_BOUND_CLASSIC__ = true;
+      window.addEventListener('keydown', function(e){
+        var ctrl = e.ctrlKey || e.metaKey;
+        if (!ctrl) return;
+        // lasă browserul să facă undo în input/textarea
+        if (isEditable(e.target)) return;
+        var k = (e.key||'').toLowerCase();
+        var sh = !!e.shiftKey;
+        if (k === 'z' && !sh){
+          if (window.LCS && window.LCS.history && window.LCS.history.canUndo()){
+            e.preventDefault();
+            try { window.LCS.history.undo(); } catch(_){ }
+          }
+        } else if ((k === 'z' && sh) || k === 'y'){
+          if (window.LCS && window.LCS.history && window.LCS.history.canRedo()){
+            e.preventDefault();
+            try { window.LCS.history.redo(); } catch(_){ }
+          }
+        }
+      }, true); // capture ca să nu fie blocat de alți listeners
+    }
+
+    // 3) Auto-push coalesced la acțiuni UI comune (input/change/click pe butoane)
+    (function autoPushUI(){
+      var t = 0;
+      function schedule(reason){
+        if (!window.LCS || !window.LCS.history) return;
+        clearTimeout(t);
+        t = setTimeout(function(){
+          try { window.LCS.history.push(reason||'ui-change'); } catch(_){ }
+        }, 220); // coalesced ~0.2s
+      }
+      // input & change pe panoul de opțiuni
+      document.addEventListener('input', function(e){
+        var el = e.target;
+        if (!el) return;
+        // să nu împingem la fiecare tastă din text inputs — doar la sliders/colors checkboxes
+        var type = (el.type||'').toLowerCase();
+        if (['range','color','checkbox','radio','number'].includes(type)) schedule('ui-input');
+      }, true);
+      document.addEventListener('change', function(){ schedule('ui-change'); }, true);
+      // click pe butoane „Set”, „Reset”, „Undo/Redo” etc. → împinge după ce acțiunea aplică state-ul
+      document.addEventListener('click', function(e){
+        var t = e.target;
+        if (!t || t.tagName!=='BUTTON') return;
+        var label = (t.textContent||'').toLowerCase().trim();
+        if (['set','reset','apply','ok','done','aplica','reseteaza','undo','redo'].some(function(s){return label===s;})){
+          setTimeout(function(){ schedule('ui-click'); }, 0);
+        }
+      }, true);
+    })();
+
+    // 4) API global pentru butoanele existente (dacă le ai în UI)
+    window.undo = function(){ try { if (window.LCS.history.canUndo()) window.LCS.history.undo(); } catch(_){ } };
+    window.redo = function(){ try { if (window.LCS.history.canRedo()) window.LCS.history.redo(); } catch(_){ } };
+    window.pushHistory = function(){ try { window.LCS.history.push('manual'); } catch(_){ } };
+  })();
+  </script>
 </body>
 </html>
