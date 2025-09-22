@@ -2658,6 +2658,91 @@
     window.__LCS_NORMALIZE__ = { normalizeSnapshot: normalizeSnapshot };
   })();
   </script>
+  <!-- Outline smoothing: enforce round joins/caps + safe offset options -->
+  <script>
+  (function(){
+    if (window.__LCS_OUTLINE_FIX__) return;
+    window.__LCS_OUTLINE_FIX__ = true;
+
+    // 1) Canvas 2D: forțează lineJoin/lineCap/miterLimit la fiecare stroke/text
+    try {
+      if (window.CanvasRenderingContext2D && CanvasRenderingContext2D.prototype) {
+        var P = CanvasRenderingContext2D.prototype;
+        var setRound = function(ctx){
+          try{
+            if (ctx.lineJoin !== 'round') ctx.lineJoin = 'round';
+            if (ctx.lineCap  !== 'round') ctx.lineCap  = 'round';
+            if (!(ctx.miterLimit <= 3))   ctx.miterLimit = 2.5;
+          }catch(_){ }
+        };
+        var _stroke = P.stroke;
+        P.stroke = function(){ setRound(this); return _stroke.apply(this, arguments); };
+        var _strokeText = P.strokeText;
+        if (_strokeText) P.strokeText = function(){ setRound(this); return _strokeText.apply(this, arguments); };
+        var _fillText = P.fillText;
+        if (_fillText)   P.fillText   = function(){ setRound(this); return _fillText.apply(this, arguments); };
+      }
+    } catch(_) {}
+
+    // 2) SVG: aplică atributele pe orice path (inclusiv pe cele adăugate ulterior)
+    function enforceSvgRound(root){
+      try {
+        (root || document).querySelectorAll('svg path').forEach(function(p){
+          p.setAttribute('stroke-linejoin','round');
+          p.setAttribute('stroke-linecap','round');
+        });
+      } catch(_) {}
+    }
+    enforceSvgRound(document);
+    try {
+      var mo = new MutationObserver(function(muts){
+        muts.forEach(function(m){
+          m.addedNodes && m.addedNodes.forEach(function(n){
+            if (n && n.nodeType===1){
+              enforceSvgRound(n);
+              if (n.shadowRoot) enforceSvgRound(n.shadowRoot);
+            }
+          });
+        });
+      });
+      mo.observe(document.documentElement, { childList:true, subtree:true });
+      setTimeout(function(){ try{ mo.disconnect(); }catch(_){ } }, 8000); // nu ținem observer-ul la nesfârșit
+    } catch(_) {}
+
+    // 3) Dacă există o funcție de offset globală, o împachetăm cu opțiuni sigure
+    try {
+      if (typeof window.offsetPathToPolys === 'function' && !window.offsetPathToPolys.__wrappedFix){
+        var _origOffset = window.offsetPathToPolys;
+        window.offsetPathToPolys = function(path, opts){
+          opts = Object.assign(
+            { join:'round', cap:'round', miterLimit:2.5, simplify:true, simplifyTolerance:0.15 },
+            opts || {}
+          );
+          return _origOffset(path, opts);
+        };
+        window.offsetPathToPolys.__wrappedFix = true;
+      }
+    } catch(_) {}
+
+    // 4) Când se apasă butonul "Set" la grosimi, rulează fixul + push coalesced
+    document.addEventListener('click', function(e){
+      var t = e.target;
+      if (!t || t.tagName !== 'BUTTON') return;
+      var label = (t.textContent || '').trim().toLowerCase();
+      if (label === 'set') {
+        // după ce aplicația a actualizat starea, re-enforce pe SVG și autosave în istoric
+        setTimeout(function(){
+          enforceSvgRound(document);
+          if (typeof window.pushHistoryCoalesced === 'function') {
+            window.pushHistoryCoalesced('thickness-change', 400);
+          } else if (window.LCS && typeof window.LCS.push === 'function') {
+            window.LCS.push('thickness-change');
+          }
+        }, 0);
+      }
+    }, true);
+  })();
+  </script>
   <!-- Cleanup: remove all dev/test banners (Codex & Kilo) -->
   <script>
   (function(){
