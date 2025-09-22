@@ -205,6 +205,30 @@
 
     const DESIGN_W = 1200, DESIGN_H = 700;
     const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+    
+    // === Catalog SVG simplu (coordonate centrate, unități ~px) ===
+    // d-urile sunt normalizate pentru mărime ~100px. Le vom scala/roti/translate în Preview.
+    const SVG_CATALOG = [
+      {
+        id: "heart",
+        label: "Inimă",
+        d: "M 0 -28 C -16 -46 -48 -42 -48 -14 C -48 4 -32 20 0 40 C 32 20 48 4 48 -14 C 48 -42 16 -46 0 -28 Z"
+      },
+      {
+        id: "star5",
+        label: "Stea",
+        d: "M 0 -50 L 14 -15 47 -15 23 7 29 40 0 22 -29 40 -23 7 -47 -15 -14 -15 Z"
+      },
+      {
+        id: "bolt",
+        label: "Fulger",
+        d: "M -10 -50 L 18 -4 H 2 L 10 28 L -18 -10 H -2 Z"
+      }
+    ];
+    // util: aplica transformări pe un path d (translate/scale/rotate) – foarte simplu: folosim un <g transform=...>
+    function stickerTransform({x=DESIGN_W/2, y=DESIGN_H/2, scale=1, rotate=0}) {
+      return `translate(${x} ${y}) rotate(${rotate}) scale(${scale})`;
+    }
 
     // Fonts I/O
     function loadFontsList() {
@@ -217,6 +241,84 @@
       if (!r.ok) throw new Error("TTF fetch failed: " + url);
       const buf = await r.arrayBuffer();
       return opentype.parse(buf);
+    }
+    
+    async function loadStickers(){
+      try{
+        const r = await fetch("/assets/stickers.json",{cache:"no-store"});
+        if(!r.ok) throw new Error("stickers.json missing");
+        const list = await r.json();
+        return Array.isArray(list) ? list.filter(s => s && s.id && s.d) : [];
+      }catch(_){ return []; }
+    }
+
+    function renderStickerLayers(st, def, idx){
+      // st = instanța stickerului (x,y,scale,rotation, layerCount, layers)
+      // def = definiția stickerului (def.d = path SVG)
+      // idx = indexul pentru key
+      const L = (st.layers || {});
+      const rounded = (L.rounded !== false);
+      const lj = rounded ? "round" : "miter";
+      const lc = rounded ? "round" : "butt";
+
+      function drawStroke(col, w){
+        var wv = Number.isFinite(w) ? Math.max(0, Math.round(w)) : 0;
+        if (wv <= 0) return null;
+        return React.createElement("path", {
+          key: "s-"+col+"-"+wv+"-"+Math.random(),
+          d: def.d, fill: "none", stroke: col,
+          strokeWidth: wv, strokeLinejoin: lj, strokeLinecap: lc
+        });
+      }
+      function fillPath(col){
+        return React.createElement("path", {
+          key: "f-"+col+"-"+Math.random(),
+          d: def.d, fill: col
+        });
+      }
+
+      var pieces = [];
+
+      // BASE
+      if ((st.layerCount >= 2) && !(L.base && L.base.show === false)) {
+        var baseCol = (L.base && L.base.color) || "#111827";
+        pieces.push(fillPath(baseCol));
+        var basePad = (L.base && L.base.pad) || 0;
+        var s1 = drawStroke(baseCol, basePad);
+        if (s1) pieces.push(s1);
+      }
+
+      // EXTRAS 4/5
+      if (st.layerCount > 3 && Array.isArray(L.extras)) {
+        var extraMax = Math.min(2, st.layerCount - 3);
+        for (var i = 0; i < extraMax; i++){
+          var ex = L.extras[i];
+          if (ex && !(ex.show === false)) {
+            var exCol = ex.color || (L.base && L.base.color) || "#111827";
+            pieces.push(fillPath(exCol));
+            var s2 = drawStroke(exCol, ex.pad || 0);
+            if (s2) pieces.push(s2);
+          }
+        }
+      }
+
+      // MID
+      if ((st.layerCount >= 3) && !(L.mid && L.mid.show === false)) {
+        var midCol = (L.mid && L.mid.color) || "#ef4444";
+        pieces.push(fillPath(midCol));
+        var s3 = drawStroke(midCol, (L.mid && L.mid.pad) || 0);
+        if (s3) pieces.push(s3);
+      }
+
+      // TOP (la final)
+      if (!(L.top && L.top.show === false)) {
+        var topCol = (L.top && L.top.color) || st.color || "#111827";
+        var s4 = drawStroke(topCol, (L.top && L.top.pad) || 0);
+        if (s4) pieces.push(s4);
+        pieces.push(fillPath(topCol));
+      }
+
+      return pieces;
     }
 
     // Paths din text (un rând)
@@ -333,7 +435,13 @@
       baseExpandedD,
       extraExpandedD,
       layerCount,
-      extraMeta
+      extraMeta,
+      stickers,
+      onStickerDrag,
+      onStickerSelect,
+      setStickers,
+      stickerDefs,
+      selectedStickerIdx
     }) {
       const dragRef   = useRef({ active: false, index: -1, sx: 0, sy: 0, ox: 0, oy: 0 });
       const scaleRef  = useRef({ active: false, cx: 0, cy: 0, startDist: 1, startSize: fontSizePx });
@@ -369,6 +477,75 @@
         window.removeEventListener('mousemove', onMove);
         window.removeEventListener('mouseup', onUp);
       }, [onMove]);
+
+      const stickerDragRef = useRef({active:false, idx:-1, sx:0, sy:0, ox:0, oy:0});
+      const stScaleRef = React.useRef({ active:false, idx:-1, cx:0, cy:0, startDist:1, startScale:1 });
+
+      const onStickerMove = useCallback((evt) => {
+        if(!stickerDragRef.current.active) return;
+        evt.preventDefault();
+        const { x, y } = clientToSVG(evt);
+        const dx = Math.round(x - stickerDragRef.current.sx);
+        const dy = Math.round(y - stickerDragRef.current.sy);
+        const nx = stickerDragRef.current.ox + dx;
+        const ny = stickerDragRef.current.oy + dy;
+        if(typeof onStickerDrag === 'function') onStickerDrag(stickerDragRef.current.idx, nx, ny);
+      }, [clientToSVG, onStickerDrag]);
+
+      const onStickerUp = useCallback(() => {
+        if(!stickerDragRef.current.active) return;
+        stickerDragRef.current.active = false;
+        window.removeEventListener('mousemove', onStickerMove);
+        window.removeEventListener('mouseup', onStickerUp);
+      }, [onStickerMove]);
+
+      function stickerCorners(st, def){
+        const w = (def?.bbox?.w || 100) * (st.scale || 1);
+        const h = (def?.bbox?.h || 100) * (st.scale || 1);
+        const minX = st.x - w/2, maxX = st.x + w/2;
+        const minY = st.y - h/2, maxY = st.y + h/2;
+        return { minX, minY, maxX, maxY, w, h, cx: st.x, cy: st.y };
+      }
+
+      const beginStickerScale = (evt, idx, st, def) => {
+        evt.preventDefault(); evt.stopPropagation();
+        const { cx, cy } = stickerCorners(st, def);
+        const { x, y } = clientToSVG(evt);
+        const dist = Math.hypot(x - cx, y - cy) || 1;
+        stScaleRef.current = {
+          active:true, idx, cx, cy,
+          startDist: dist,
+          startScale: st.scale || 1
+        };
+        window.addEventListener('mousemove', onStickerScaleMove);
+        window.addEventListener('mouseup', onStickerScaleUp, { once:true });
+      };
+
+      const onStickerScaleMove = (evt) => {
+        if(!stScaleRef.current.active) return;
+        const { cx, cy, startDist, startScale, idx } = stScaleRef.current;
+        const { x, y } = clientToSVG(evt);
+        const dist = Math.hypot(x - cx, y - cy) || 1;
+        let nextScale = startScale * (dist / startDist);
+        nextScale = Math.max(0.05, Math.min(50, nextScale));
+        if(typeof setStickers === 'function'){
+          setStickers(prev => prev.map((it,i)=> i===idx ? {...it, scale: nextScale} : it));
+        }
+      };
+
+      const onStickerScaleUp = () => {
+        stScaleRef.current.active = false;
+        window.removeEventListener('mousemove', onStickerScaleMove);
+        window.removeEventListener('mouseup', onStickerScaleUp);
+      };
+
+      const beginStickerDrag = useCallback((evt, idx, x0, y0) => {
+        evt.preventDefault();
+        const { x, y } = clientToSVG(evt);
+        stickerDragRef.current = { active:true, idx, sx:x, sy:y, ox:x0, oy:y0 };
+        window.addEventListener('mousemove', onStickerMove);
+        window.addEventListener('mouseup', onStickerUp, { once:true });
+      }, [clientToSVG, onStickerMove, onStickerUp]);
 
       const beginDrag = useCallback((evt, idx) => {
         const target = lineOffsets?.[idx];
@@ -548,6 +725,40 @@
                 ]).flat()
           ) : []),
  
+          // ==== STICKERE ====
+          ...(Array.isArray(stickers) ? stickers.map((st, idx) => {
+            const def = stickerDefs?.find(d => d.id === st.type);
+            if(!def) return null;
+            // corpul stickerului (îl plasezi printr-un <g> cu translate/scale/rotate)
+            const pieces = renderStickerLayers(st, def, idx);
+            // selection
+            if (idx === selectedStickerIdx) {
+              pieces.push(React.createElement("path", {
+                key:"s", d: def.d, fill:"none", stroke:"#3b82f6", strokeWidth:0.6 / Math.max(0.1, st.scale||1)
+              }));
+            }
+            const g = React.createElement("g", {
+              key:`st-${idx}`,
+              transform: `translate(${st.x},${st.y}) rotate(${st.rotation||0}) scale(${st.scale||1})`,
+              style: { cursor:"move" },
+              onMouseDown: (e) => {
+                if(typeof onStickerSelect === 'function') onStickerSelect(idx);
+                beginStickerDrag(e, idx, st.x, st.y);
+              },
+              onClick: (e) => { e.stopPropagation(); if(typeof onStickerSelect === 'function') onStickerSelect(idx); }
+            }, pieces);
+            // handle-ul (bulina neagră) – la colțul dreapta-jos al bbox-ului axis-aligned
+            const { maxX, maxY } = stickerCorners(st, def);
+            const handle = idx === selectedStickerIdx ? React.createElement("circle", {
+              key:`st-h-${idx}`,
+              cx: maxX, cy: maxY, r: 10,
+              fill: "#111827", stroke: "#fff", strokeWidth: 2,
+              style: { cursor:"nwse-resize" },
+              onMouseDown: (e) => beginStickerScale(e, idx, st, def)
+            }) : null;
+            return React.createElement(React.Fragment, { key:`st-wrap-${idx}` }, [g, handle].filter(Boolean));
+          }) : []),
+
           // 4) TOP — ULTIMUL, ca să fie VIZIBIL deasupra
           ...(showTop ? (paths || []).map((d, i) =>
             React.createElement("path", { key: `top-${i}`, d, fill: (colors?.top || "#ffffff") })
@@ -582,9 +793,69 @@
       ]);
     }
 
+    function SizeDial({
+      value, onChange,
+      min=0.1, max=50,
+      step=0.1, bigStep=1,
+      size=56, title="Mărime"
+    }){
+      const dragRef = React.useRef({active:false, startY:0, startV:0});
+      const clampV = v => Math.min(max, Math.max(min, v));
+      const commit = v => typeof onChange==="function" && onChange(clampV(v));
+    
+      const onDown = e => {
+        e.preventDefault();
+        dragRef.current = {active:true, startY:e.clientY, startV:value};
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("mouseup", onUp, {once:true});
+      };
+      const onMove = e => {
+        if(!dragRef.current.active) return;
+        const dy = dragRef.current.startY - e.clientY;   // sus=+
+        commit(dragRef.current.startV + (dy/30)*bigStep);
+      };
+      const onUp = () => {
+        dragRef.current.active = false;
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      };
+      const onWheel = e => {
+        e.preventDefault();
+        const inc = e.shiftKey ? bigStep : step;
+        commit(value + (e.deltaY < 0 ? +inc : -inc));
+      };
+      const nudge = dv => e => {
+        e.stopPropagation();
+        commit(value + (e.shiftKey ? dv*bigStep : dv*step));
+      };
+    
+      const s=size, c=s/2, r=c-2;
+      return React.createElement("div", {title, style:{display:"flex",gap:10,alignItems:"center",userSelect:"none"}}, [
+        React.createElement("svg", {
+          key:"dial", width:s, height:s, viewBox:`0 0 ${s} ${s}`,
+          onMouseDown:onDown, onWheel:onWheel, style:{cursor:"ns-resize"}
+        }, [
+          React.createElement("circle",{key:"bg",cx:c,cy:c,r:r,fill:"#111827",stroke:"#0a0a0a"}),
+          React.createElement("path",{key:"up",   d:`M ${c} 8 l 8 10 h -16 z`, fill:"#fff", onClick:nudge(+1)}),
+          React.createElement("path",{key:"down", d:`M ${c} ${s-8} l -8 -10 h 16 z`, fill:"#fff", onClick:nudge(-1)}),
+          React.createElement("path",{key:"left", d:`M 8 ${c} l 10 -8 v 16 z`, fill:"#fff", onClick:nudge(-1)}),
+          React.createElement("path",{key:"right",d:`M ${s-8} ${c} l -10 8 v -16 z`, fill:"#fff", onClick:nudge(+1)}),
+          React.createElement("text",{key:"t",x:c,y:c+4,textAnchor:"middle",fontSize:10,fill:"#fff"}, `${value}`)
+        ]),
+        React.createElement("input",{
+          key:"num", type:"number", step:step, min:min, max:max,
+          value: isNaN(value) ? "" : value,
+          onChange:e=>commit(parseFloat(e.target.value||value))
+        })
+      ]);
+    }
+
     function App(){
       // STATE
       const [fontSizePx, setFontSizePx] = useState(140);
+      // === Undo/Redo history ===
+      const [history, setHistory] = React.useState([]);
+      const [historyIndex, setHistoryIndex] = React.useState(-1);
       const [selectedLineId, setSelectedLineId] = useState('line1');
       const [lines, setLines] = useState({
         line1: { x: 0, y: 0 }, line2: { x: 0, y: 0 }, line3: { x: 0, y: 0 }
@@ -595,6 +866,11 @@
       const [fontId, setFontId] = useState("");
       const [font, setFont] = useState(null);
       const [loadMsg, setLoadMsg] = useState("");
+      
+      // === Stickere (bibliotecă + instanțe pe canvas) ===
+      const [stickersLib, setStickersLib] = useState([]);
+      const [stickers, setStickers] = useState([]);        // [{type:'star', x,y, scale, rotation, layerCount, layers:{...}}, ...]
+      const [selectedStickerIdx, setSelectedStickerIdx] = useState(-1);  // index-ul din 'stickers' sau -1 dacă nimic selectat
 
       // Text (până la 3 rânduri)
       const [text, setText]   = useState("Marius");
@@ -670,6 +946,32 @@
         setZoom(1);
         setUnit('px');
       };
+      
+      function addStickerToCanvas(st){
+        if(!st) return;
+        setStickers(prev => {
+          const next = prev.concat([{
+            type: st.id,
+            x: DESIGN_W/2, y: DESIGN_H/2,
+            scale: 1, rotation: 0,
+            color: "#111827",
+            layerCount: 3,
+            layers: {
+              top:  { color: "#111827", show: true,  pad: 0  },
+              mid:  { color: "#ef4444", show: true,  pad: 16 },
+              base: { color: "#111827", show: true,  pad: 28 },
+              extras: [
+                { color: "#9ca3af", show: true, pad: 22 }, // L4
+                { color: "#6b7280", show: true, pad: 18 }  // L5
+              ],
+              rounded: true
+            }
+          }]);
+          setSelectedStickerIdx(next.length - 1);
+          return next;
+        });
+        pushHistory();
+      }
 
       useEffect(() => {
         window.applyExpandMid   = () => { setMidExpandedPad(padMid);  setMidExpanded(true);  };
@@ -719,6 +1021,14 @@
           }
         })();
       }, []);
+      
+      // Load stickers
+      useEffect(() => { loadStickers().then(setStickersLib); }, []);
+
+      // Sync sticker selection
+      useEffect(() => {
+        setStickers(prev => prev.map((it, i) => ({ ...it, selected: i===selectedStickerIdx })));
+      }, [selectedStickerIdx]);
 
       // Load selected font
       useEffect(() => {
@@ -831,6 +1141,57 @@
         try { return Number(localStorage.getItem('previewZoom')) || 1; } catch(_) { return 1; }
       });
       useEffect(() => { try { localStorage.setItem('previewZoom', String(zoom)); } catch(_) {} }, [zoom]);
+
+      // creează snapshot cu starea actuală
+      const makeSnapshot = React.useCallback(() => ({
+        stickers: JSON.parse(JSON.stringify(stickers)),
+        lines: JSON.parse(JSON.stringify(lines)),
+        layerCount,
+        fontSizePx,
+        zoom
+      }), [stickers, lines, layerCount, fontSizePx, zoom]);
+
+      // adaugă snapshot nou în history
+      const pushHistory = React.useCallback(() => {
+        const snap = makeSnapshot();
+        setHistory(prev => {
+          const next = prev.slice(0, historyIndex + 1).concat([snap]);
+          return next.slice(-50); // max 50 pași
+        });
+        setHistoryIndex(i => Math.min(history.length, i + 1));
+      }, [makeSnapshot, historyIndex, history.length]);
+
+      // === Undo/Redo functions ===
+      const undo = React.useCallback(() => {
+        setHistoryIndex(i => {
+          if (i <= 0) return i;
+          const prevSnap = history[i - 1];
+          if (prevSnap) {
+            setStickers(prevSnap.stickers);
+            setLines(prevSnap.lines);
+            setLayerCount(prevSnap.layerCount);
+            setFontSizePx(prevSnap.fontSizePx);
+            setZoom(prevSnap.zoom);
+          }
+          return i - 1;
+        });
+      }, [history]);
+
+      const redo = React.useCallback(() => {
+        setHistoryIndex(i => {
+          if (i >= history.length - 1) return i;
+          const nextSnap = history[i + 1];
+          if (nextSnap) {
+            setStickers(nextSnap.stickers);
+            setLines(nextSnap.lines);
+            setLayerCount(nextSnap.layerCount);
+            setFontSizePx(nextSnap.fontSizePx);
+            setZoom(nextSnap.zoom);
+          }
+          return i + 1;
+        });
+      }, [history]);
+
       const fitZoom = React.useCallback(() => {
         if (!textBBox) return;
         const w = (textBBox.maxX - textBBox.minX);
@@ -913,12 +1274,14 @@
           line2: { ...(prev.line2 || {}), x: (prev.line2?.x||0) + dx, y: (prev.line2?.y||0) + dy },
           line3: { ...(prev.line3 || {}), x: (prev.line3?.x||0) + dx, y: (prev.line3?.y||0) + dy },
         }));
+        pushHistory();
       }, [curBBox, curCX, curCY, setLines]);
 
       const scaleUniformBy = React.useCallback((factor) => {
         if (!Number.isFinite(factor) || factor <= 0) return;
         const next = clamp(Math.round(fontSizePx * factor), 8, 5000);
         setFontSizePx(next);
+        pushHistory();
         // centrul rămâne neschimbat (layout-ul nostru e centrat pe orizontală),
         // dar ca să fim siguri, re-fixăm centrul la valoarea curentă
         // după ce se actualizează bbox-ul (într-un micro-task).
@@ -1046,6 +1409,253 @@
       }
 
       // UI
+      // --- Sticker selection helpers (pune asta înainte de return-ul cu UI) ---
+      const hasSelSticker =
+        typeof selectedStickerIdx === "number" &&
+        selectedStickerIdx >= 0 &&
+        Array.isArray(stickers) &&
+        stickers[selectedStickerIdx];
+
+      const selSticker   = hasSelSticker ? stickers[selectedStickerIdx] : null;
+      const selLayers    = {
+        count: selSticker?.layerCount ?? 3,
+        showTop: selSticker?.layers?.top?.show !== false,
+        showMid: selSticker?.layers?.mid?.show !== false,
+        showBase: selSticker?.layers?.base?.show !== false,
+        padMid: selSticker?.layers?.mid?.pad ?? 16,
+        padBase: selSticker?.layers?.base?.pad ?? 28,
+        round: selSticker?.layers?.rounded ?? true
+      };
+      const setSelSticker = (fnOrPatch) => {
+        setStickers(prev =>
+          prev.map((it,i) =>
+            i === selectedStickerIdx
+              ? (typeof fnOrPatch === "function" ? fnOrPatch(it) : { ...it, ...fnOrPatch })
+              : it
+          )
+        );
+      };
+
+      // panelul de layere pentru stickerul selectat – un ELEMENT gata de pus în lista de copii
+      const stickerLayerPanel = hasSelSticker ? React.createElement(
+        React.Fragment,
+        { key: "sticker-layer-panel" },
+        React.createElement("div", { className: "label", style:{marginTop:10} }, "Layere sticker"),
+        React.createElement("div", { className:"controls-row" }, [
+          React.createElement("div", { key:"sl-count" }, [
+            React.createElement("div", { className:"label" }, "Număr layere"),
+            React.createElement("input", {
+              type:"number", min:1, max:5, value: String(selLayers.count),
+              onChange: e => {
+                const v = Math.max(1, Math.min(5, parseInt(e.target.value||"1",10)));
+                setSelSticker(s => ({ ...s, layerCount: v }));
+              }
+            })
+          ]),
+          React.createElement("div", { key:"sl-round" }, [
+            React.createElement("div", { className:"label" }, "Rotunjit"),
+            React.createElement("label", { style:{display:"flex",gap:6,alignItems:"center"} },
+              React.createElement("input", {
+                type:"checkbox",
+                checked: !!selLayers.round,
+                onChange: e => setSelSticker(s => ({ ...s, layers: { ...(s.layers||{}), rounded: e.target.checked } }))
+              }),
+              "colțuri rotunjite"
+            )
+          ])
+        ]),
+        // grosimi (pad) pentru mijloc și bază (exemplu)
+        React.createElement("div", { className:"controls-row" }, [
+          React.createElement("div", { key:"sl-mid" }, [
+            React.createElement("div", { className:"label" }, "Grosime (Mijloc)"),
+            React.createElement("input", {
+              type:"range", min:0, max:80, step:1, value: String(selLayers.padMid ?? 10),
+              onChange: e => setSelSticker(s => ({ ...s, layers: { ...(s.layers||{}), mid: { ...(s.layers?.mid||{}), pad: +e.target.value } } }))
+            })
+          ]),
+          React.createElement("div", { key:"sl-base" }, [
+            React.createElement("div", { className:"label" }, "Grosime (Bază)"),
+            React.createElement("input", {
+              type:"range", min:1, max:200, step:1, value: String(selLayers.padBase ?? 20),
+              onChange: e => setSelSticker(s => ({ ...s, layers: { ...(s.layers||{}), base: { ...(s.layers?.base||{}), pad: +e.target.value } } }))
+            })
+          ])
+        ]),
+        // vizibilități
+        React.createElement("div", { className:"controls-row" }, [
+          React.createElement("button", {
+            key:"sl-showTop",
+            className:"icon-btn",
+            "aria-pressed": selLayers.showTop !== false,
+            onClick: () => setSelSticker(s => ({ ...s, layers: { ...(s.layers||{}), top: { ...(s.layers?.top||{}), show: !(s.layers?.top?.show !== false) } } }))
+          }, "Top"),
+          React.createElement("button", {
+            key:"sl-showMid",
+            className:"icon-btn",
+            "aria-pressed": selLayers.showMid !== false,
+            onClick: () => setSelSticker(s => ({ ...s, layers: { ...(s.layers||{}), mid: { ...(s.layers?.mid||{}), show: !(s.layers?.mid?.show !== false) } } }))
+          }, "Mid"),
+          React.createElement("button", {
+            key:"sl-showBase",
+            className:"icon-btn",
+            "aria-pressed": selLayers.showBase !== false,
+            onClick: () => setSelSticker(s => ({ ...s, layers: { ...(s.layers||{}), base: { ...(s.layers?.base||{}), show: !(s.layers?.base?.show !== false) } } }))
+          }, "Bază")
+        ])
+      ) : null;
+
+      // === Helpers pt mișcare text (când nu e sticker selectat) ===
+      const nudgeLines = React.useCallback((dx, dy) => {
+        setLines(prev => ({
+          line1: { ...(prev.line1||{}), x:(prev.line1?.x||0)+dx, y:(prev.line1?.y||0)+dy },
+          line2: { ...(prev.line2||{}), x:(prev.line2?.x||0)+dx, y:(prev.line2?.y||0)+dy },
+          line3: { ...(prev.line3||{}), x:(prev.line3?.x||0)+dx, y:(prev.line3?.y||0)+dy }
+        }));
+      }, [setLines]);
+
+      // === Keyboard shortcuts ===
+      const onKeyDown = React.useCallback((e) => {
+        // nu intervenim când utilizatorul scrie în input-uri
+        const tag = (document.activeElement?.tagName || "").toLowerCase();
+        if (tag === "input" || tag === "textarea" || tag === "select" || document.activeElement?.isContentEditable) return;
+
+        const step = e.shiftKey ? 10 : 1;
+        const scaleSmall = e.shiftKey ? 0.15 : 0.05;  // pentru font și sticker
+        const rotStep = e.shiftKey ? 15 : 5;
+
+        const hasSel = (typeof selectedStickerIdx === "number" &&
+                        selectedStickerIdx >= 0 &&
+                        Array.isArray(stickers) &&
+                        !!stickers[selectedStickerIdx]);
+
+        // mișcare (săgeți)
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "ArrowUp" || e.key === "ArrowDown") {
+          e.preventDefault();
+          const dx = (e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0);
+          const dy = (e.key === "ArrowUp"   ? -step : e.key === "ArrowDown"  ? step : 0);
+          if (hasSel) {
+            setStickers(prev => prev.map((it,i)=> i===selectedStickerIdx ? {...it, x:(it.x||0)+dx, y:(it.y||0)+dy} : it));
+          } else {
+            nudgeLines(dx, dy);
+          }
+          return;
+        }
+
+        // scale: + / -
+        if (e.key === "+" || e.key === "=" || e.key === "-" || e.key === "_") {
+          e.preventDefault();
+          if (hasSel) {
+            setStickers(prev => prev.map((it,i)=>{
+              if (i!==selectedStickerIdx) return it;
+              const mul = (e.key === "+" || e.key === "=") ? (1+scaleSmall) : (1-scaleSmall);
+              const next = Math.max(0.05, Math.min(50, (it.scale||1) * mul));
+              return {...it, scale: next};
+            }));
+          } else {
+            const delta = Math.max(1, Math.round((e.shiftKey ? 10 : 1)));
+            setFontSizePx(v => {
+              const d = (e.key === "+" || e.key === "=") ? +delta : -delta;
+              return Math.max(8, Math.min(5000, v + d));
+            });
+          }
+          return;
+        }
+
+        // rotire: R / Shift+R (doar pentru sticker)
+        if ((e.key === "r" || e.key === "R") && hasSel) {
+          e.preventDefault();
+          setStickers(prev => prev.map((it,i)=> i===selectedStickerIdx
+            ? {...it, rotation: Math.max(-180, Math.min(180, Math.round((it.rotation||0) + (e.shiftKey ? rotStep : rotStep))))}
+            : it
+          ));
+          return;
+        }
+
+        // Delete / Backspace: șterge stickerul selectat
+        if ((e.key === "Delete" || e.key === "Backspace") && hasSel) {
+          e.preventDefault();
+          setStickers(prev => prev.filter((_,i)=> i!==selectedStickerIdx));
+          setSelectedStickerIdx(-1);
+          return;
+        }
+
+        // Ctrl + D: duplicate sticker
+        if ((e.ctrlKey || e.metaKey) && (e.key === "d" || e.key === "D") && hasSel) {
+          e.preventDefault();
+          setStickers(prev => {
+            const src = prev[selectedStickerIdx];
+            if (!src) return prev;
+            const dup = {...src, x:(src.x||0)+20, y:(src.y||0)+20};
+            const next = prev.slice(0, selectedStickerIdx+1).concat([dup], prev.slice(selectedStickerIdx+1));
+            // selectăm duplicatul (următorul index)
+            setSelectedStickerIdx(selectedStickerIdx+1);
+            return next;
+          });
+          return;
+        }
+
+        // Esc: deselect
+        if (e.key === "Escape" && hasSel) {
+          e.preventDefault();
+          setSelectedStickerIdx(-1);
+          return;
+        }
+
+        // Zoom: Z (in) / X (out)
+        if (e.key === "z" || e.key === "Z" || e.key === "x" || e.key === "X") {
+          e.preventDefault();
+          setZoom(z => {
+            const mul = (e.key === "z" || e.key === "Z") ? 1.1 : 1/1.1;
+            return Math.max(0.05, Math.min(2, z * mul));
+          });
+          return;
+        }
+
+        // Fit: F
+        if (e.key === "f" || e.key === "F") {
+          e.preventDefault();
+          // reusează fitZoom deja definit
+          fitZoom();
+          return;
+        }
+
+        // Ctrl + [1..5] => set layer count (sticker sau global)
+        if ((e.ctrlKey || e.metaKey) && ["1","2","3","4","5"].includes(e.key)) {
+          e.preventDefault();
+          const val = parseInt(e.key, 10);
+          if (hasSel) {
+            setStickers(prev => prev.map((it,i)=> i===selectedStickerIdx ? {...it, layerCount: val} : it));
+          } else {
+            setLayerCount(val);
+          }
+          pushHistory();
+          return;
+        }
+      
+        // Undo / Redo
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+          e.preventDefault();
+          if (e.shiftKey) {
+            redo();
+          } else {
+            undo();
+          }
+          return;
+        }
+      }, [
+        selectedStickerIdx, stickers, setStickers,
+        setLines, nudgeLines,
+        setFontSizePx, setZoom, fitZoom,
+        setLayerCount,
+        undo, redo, pushHistory
+      ]);
+
+      // atașăm/detașăm listenerul
+      React.useEffect(() => {
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+      }, [onKeyDown]);
+
       return React.createElement(
         React.Fragment,
         null,
@@ -1080,6 +1690,80 @@
           React.createElement("div", { className:"label", style:{marginTop:10} }, "Text 3 (opțional)"),
           React.createElement("input", { type:"text", value:text3, onInput:e=>setText3(e.target.value) }),
 
+          React.createElement("div", { className:"label", style:{marginTop:10} }, "Stickere"),
+          React.createElement("div", { style:{display:"flex", gap:8, flexWrap:"wrap"} },
+            stickersLib.map(st =>
+              React.createElement("button", {
+                key: st.id,
+                onClick: () => addStickerToCanvas(st),
+                title: st.label,
+                style:{
+                  width:48,height:48,border:"1px solid #d1d5db",borderRadius:8,background:"#fff",
+                  display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"
+                }
+              },
+                React.createElement("svg", { viewBox:"0 0 24 24", width:24, height:24 },
+                  React.createElement("path", { d: st.d, fill:"#111827" })
+                )
+              )
+            )
+          ),
+
+          (selectedStickerIdx >= 0 && stickers[selectedStickerIdx])
+            ? React.createElement(
+                React.Fragment,
+                null,
+                React.createElement("div", { className:"label", style:{marginTop:10} }, "Sticker selectat"),
+                React.createElement("div", { className:"controls-row" }, [
+                  React.createElement("div", null, [
+                    React.createElement("div", { className:"label" }, "Culoare"),
+                    React.createElement("input", {
+                      type:"color",
+                      value: stickers[selectedStickerIdx].color,
+                      onInput: e => setStickers(prev => prev.map((it, i) =>
+                        i === selectedStickerIdx ? { ...it, color: e.target.value } : it
+                      ))
+                    })
+                  ]),
+                  React.createElement("div", null, [
+                    React.createElement("div", { className:"label" }, "Mărime"),
+                    React.createElement(SizeDial, {
+                      key:"dial-sticker",
+                      title:"Mărime sticker",
+                      value: stickers[selectedStickerIdx]?.scale ?? 1,
+                      onChange: v => setStickers(prev =>
+                        prev.map((it,i)=> i===selectedStickerIdx ? {...it, scale: parseFloat(v)} : it)
+                      ),
+                      min: 0.1, max: 50, step: 0.1, bigStep: 1, size: 56
+                    })
+                  ])
+                ]),
+                React.createElement("div", { className:"controls-row" }, [
+                  React.createElement("div", null, [
+                    React.createElement("div", { className:"label" }, "Rotire"),
+                    React.createElement("input", {
+                      type:"range", min:-180, max:180, step:1,
+                      value: stickers[selectedStickerIdx].rotation,
+                      onChange: e => setStickers(prev => prev.map((it, i) =>
+                        i === selectedStickerIdx ? { ...it, rotation: parseInt(e.target.value,10) } : it
+                      ))
+                    })
+                  ]),
+                  React.createElement("div", null, [
+                    React.createElement("div", { className:"label" }, "Șterge"),
+                    React.createElement("button", {
+                      className:"btn",
+                      onClick: () => {
+                        setStickers(prev => prev.filter((_,i)=> i!==selectedStickerIdx));
+                        setSelectedStickerIdx(-1);
+                      }
+                    }, "Remove")
+                  ])
+                ]),
+                stickerLayerPanel
+              )
+            : null,
+
           React.createElement("div", { className:"controls-row-3 control-compact", style:{marginTop:10} }, [
             React.createElement("div", { className:"control" }, [
               React.createElement("div", { className:"label" }, "Spațiere rânduri"),
@@ -1097,8 +1781,20 @@
               React.createElement("input", {
                 type:"number", min:10, max:5000,
                 value: toValueStr(fontSizePx),
-                onChange: e => setFontSizePx(toNum(e.target.value, 140))
-              })
+                onChange: e => {
+                  setFontSizePx(toNum(e.target.value, 140));
+                  pushHistory();
+                }
+              }),
+              React.createElement("div",{style:{marginTop:8}},
+                React.createElement(SizeDial, {
+                  key:"dial-font",
+                  title:"Font size",
+                  value: fontSizePx,
+                  onChange: v => setFontSizePx(Math.round(Math.max(8, Math.min(5000, v)))),
+                  min: 8, max: 5000, step: 1, bigStep: 10, size: 56
+                })
+              )
             ]),
             React.createElement("div", { className:"control" }, [
               React.createElement("div", { className:"label" }, "Spațiere litere"),
@@ -1112,6 +1808,9 @@
  
           // Mutare se face direct în canvas (drag) sau cu săgeți (±1px / Shift ±10px)
           React.createElement("div", { className:"hint" }, "Mută textul direct în canvas (drag) • Săgeți: ±1px, cu Shift: ±10px"),
+          React.createElement("div", { className:"hint" },
+            "Shortcuturi: Săgeți (mișcare) • Shift = ×10 • +/- (scală) • R/Shift+R (rotire sticker) • Delete (șterge) • Ctrl+D (duplică) • Z/X (zoom) • F (Fit) • Ctrl+1..5 (layere)"
+          ),
 
           /* (mutat în overlay-ul din canvas) */
 
@@ -1185,6 +1884,7 @@
                   const v = parseInt(e.target.value || "3", 10);
                   const clamped = Math.min(5, Math.max(1, isNaN(v) ? 3 : v));
                   setLayerCount(clamped);
+                  pushHistory();
                 }
               })
             ]),
@@ -1230,7 +1930,10 @@
               React.createElement("input", {
                 type:"range", min:0, max:50, step:1,
                 value: padMid,
-                onChange: e => setPadMid(+e.target.value)
+                onChange: e => {
+                  setPadMid(+e.target.value);
+                  pushHistory();
+                }
               }),
               React.createElement("div", { style:{ display:"flex", gap:6, marginTop:4 } }, [
                 React.createElement("button", {
@@ -1327,6 +2030,10 @@
               onClick: resetDesign,
               style:{ background:"#ef4444", borderColor:"#ef4444" }
             }, "Resetare totală"),
+            React.createElement("div", { key:"undo-redo-row", className:"controls-row", style:{gap:6} }, [
+              React.createElement("button", { onClick: undo, disabled: historyIndex<=0, className:"btn" }, "Undo"),
+              React.createElement("button", { onClick: redo, disabled: historyIndex>=history.length-1, className:"btn" }, "Redo")
+            ]),
             React.createElement("button", {
               key:"btn-export-all",
               className:"btn",
@@ -1377,7 +2084,15 @@
                 baseExpandedD,
                 extraExpandedD,
                 layerCount,
-                extraMeta: extraLayers.slice(0, Math.max(0, Math.min(2, layerCount-3)))
+                extraMeta: extraLayers.slice(0, Math.max(0, Math.min(2, layerCount-3))),
+                stickers: stickers,
+                onStickerDrag: (idx, nx, ny) => {
+                  setStickers(prev => prev.map((it, i) => i===idx ? {...it, x:nx, y:ny} : it));
+                },
+                onStickerSelect: (idx) => setSelectedStickerIdx(idx),
+                setStickers: setStickers,
+                stickerDefs: stickersLib,
+                selectedStickerIdx
               }),
               React.createElement("div", { className:"zoom-overlay" }, [
                 React.createElement("input", {
