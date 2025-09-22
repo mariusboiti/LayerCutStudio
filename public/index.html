@@ -2678,5 +2678,187 @@
     } catch(e) { /* silent */ }
   })();
   </script>
+  <!-- LCS: Undo/Redo stable manager + keyboard + auto-capture -->
+  <script>
+  (function(){
+    // Evită dublarea la HMR/reload parțial
+    if (window.__LCS_HISTORY_INSTALLED__) return;
+    window.__LCS_HISTORY_INSTALLED__ = true;
+
+    // ---------- utilitare ----------
+    var hasStructured = (typeof structuredClone === 'function');
+    function dclone(o){ try { return hasStructured ? structuredClone(o) : JSON.parse(JSON.stringify(o)); } catch(e){ return o; } }
+    function dropVolatile(key, val){ return (key === 'updatedAt' || key === 'lastSavedAt') ? undefined : val; }
+    function hashSnapshot(snap){
+      try { return JSON.stringify(snap, dropVolatile); } catch(e){ return Math.random()+''; }
+    }
+    function isEditable(el){ if(!el) return false; var t=(el.tagName||'').toLowerCase(); return ['input','textarea','select'].includes(t) || !!el.isContentEditable; }
+
+    // ---------- HistoryManager (folosește existentul dacă e deja definit) ----------
+    (function defineHM(){
+      if (window.__LCS_HistoryManager__) return;
+      var now = function(){ return Date.now(); };
+      function deepClone(obj){ return dclone(obj); }
+      function HistoryManager(opts){
+        opts = opts || {};
+        this.limit = opts.limit || 250;
+        this.minIntervalMs = opts.minIntervalMs || 80;
+        this.coalesceWindowMs = opts.coalesceWindowMs || 280;
+        this.stack = [];
+        this.index = -1;
+        this._lastPushTs = 0;
+        this._lastReason = '';
+        this._adapters = { getSnapshot:function(){return{};}, applySnapshot:function(){}, onDidApply:null };
+      }
+      HistoryManager.prototype.setAdapters = function(a){
+        if (a && typeof a.getSnapshot==='function') this._adapters.getSnapshot = a.getSnapshot;
+        if (a && typeof a.applySnapshot==='function') this._adapters.applySnapshot = a.applySnapshot;
+        if (a && typeof a.onDidApply==='function') this._adapters.onDidApply = a.onDidApply;
+      };
+      HistoryManager.prototype._current = function(){ return (this.index>=0 && this.index<this.stack.length) ? this.stack[this.index] : null; };
+      HistoryManager.prototype.canUndo = function(){ return this.index > 0; };
+      HistoryManager.prototype.canRedo = function(){ return this.index >= 0 && this.index < this.stack.length - 1; };
+      HistoryManager.prototype._shouldCoalesce = function(reason){
+        var t = Date.now();
+        return !!(reason && reason === this._lastReason && (t - this._lastPushTs) <= this.coalesceWindowMs);
+      };
+      HistoryManager.prototype.push = function(reason){
+        var t = Date.now();
+        if (t - this._lastPushTs < this.minIntervalMs) return;
+        var snap = deepClone(this._adapters.getSnapshot() || {});
+        if (this.index < this.stack.length - 1) this.stack = this.stack.slice(0, this.index + 1);
+        if (this._shouldCoalesce(reason) && this.stack.length) {
+          this.stack[this.stack.length - 1] = snap;
+        } else {
+          this.stack.push(snap);
+          if (this.stack.length > this.limit) {
+            this.stack.shift();
+          } else {
+            this.index++;
+          }
+        }
+        this._lastPushTs = t;
+        this._lastReason = reason || '';
+      };
+      HistoryManager.prototype._applyCurrent = function(kind){
+        var snap = this._current(); if (!snap) return;
+        var applied = deepClone(snap);
+        this._adapters.applySnapshot(applied);
+        if (this._adapters.onDidApply) this._adapters.onDidApply(kind, applied);
+      };
+      HistoryManager.prototype.undo = function(){ if (!this.canUndo()) return; this.index--; this._applyCurrent('undo'); };
+      HistoryManager.prototype.redo = function(){ if (!this.canRedo()) return; this.index++; this._applyCurrent('redo'); };
+      HistoryManager.prototype.peek = function(){ return this._current(); };
+      window.__LCS_HistoryManager__ = HistoryManager;
+    })();
+
+    // ---------- LCS core ----------
+    var HistoryManager = window.__LCS_HistoryManager__;
+    if (!window.LCS) window.LCS = {};
+    var LCS = window.LCS;
+
+    // Creează history dacă lipsește
+    if (!LCS.history) LCS.history = new HistoryManager({ limit: 300, minIntervalMs: 80, coalesceWindowMs: 300 });
+
+    // Wrap la _applyCurrent ca să știm când aplicăm (evităm auto-capture în timpul undo/redo)
+    if (!LCS.__applyWrapped){
+      var origApply = LCS.history._applyCurrent.bind(LCS.history);
+      LCS.history._applyCurrent = function(kind){
+        try { LCS.__applying = true; origApply(kind); }
+        finally { LCS.__applying = false; window.dispatchEvent(new CustomEvent('lcs:state-applied', { detail:{ kind:kind, snapshot: dclone(LCS.history.peek()||{}) }})); }
+      };
+      LCS.__applyWrapped = true;
+    }
+
+    // Adaptor: se leagă când detectează window.getSnapshot + window.applySnapshot
+    function bindAdapters(){
+      if (LCS.__adaptersBound) return true;
+      if (typeof window.getSnapshot === 'function' && typeof window.applySnapshot === 'function'){
+        LCS.history.setAdapters({
+          getSnapshot: function(){ return window.getSnapshot() || {}; },
+          applySnapshot: function(snap){ window.applySnapshot(snap); },
+          onDidApply: function(){ /* event emis deja din wrapper */ }
+        });
+        // defaults = boot snapshot (dacă există), altfel primul snapshot real
+        if (!('defaults' in LCS)) {
+          try {
+            var boot = window.__LCS_BOOT_SNAPSHOT__ || window.getSnapshot();
+            LCS.defaults = dclone(boot);
+          } catch(_){ LCS.defaults = {}; }
+        }
+        // push inițial (o singură dată)
+        if (!LCS.__pushedInit) { try { LCS.history.push('init'); } catch(_){ } LCS.__pushedInit = true; }
+        LCS.__adaptersBound = true;
+        return true;
+      }
+      return false;
+    }
+
+    // încearcă să lege adaptorul imediat + poll scurt
+    if (!bindAdapters()){
+      var tries = 0, t = setInterval(function(){
+        tries++; if (bindAdapters() || tries > 400) clearInterval(t); // ~20s max
+      }, 50);
+    }
+
+    // ---------- API prietenos ----------
+    if (!LCS.push)   LCS.push   = function(reason){ try { LCS.history.push(reason||''); } catch(_){ } };
+    if (!LCS.undo)   LCS.undo   = function(){ try { LCS.history.undo(); } catch(_){ } };
+    if (!LCS.redo)   LCS.redo   = function(){ try { LCS.history.redo(); } catch(_){ } };
+    if (!LCS.canUndo)LCS.canUndo= function(){ return LCS.history.canUndo(); };
+    if (!LCS.canRedo)LCS.canRedo= function(){ return LCS.history.canRedo(); };
+    if (!LCS.state)  LCS.state  = function(){ return dclone(LCS.history.peek()||{}); };
+
+    // Compat: funcții globale pe care UI-ul tău le poate apela
+    window.pushHistory = function(reason){ LCS.push(reason||''); };
+    (function(){ // coalesced
+      var _lastTs = 0, _lastR = '';
+      window.pushHistoryCoalesced = function(reason, windowMs){
+        reason = reason||''; windowMs = Number(windowMs)||250;
+        var t = Date.now();
+        if (!(reason && reason===_lastR && (t-_lastTs)<=windowMs)) LCS.push(reason);
+        _lastR = reason; _lastTs = t;
+      };
+    })();
+    window.undo = function(){ if (LCS.canUndo()) LCS.undo(); };
+    window.redo = function(){ if (LCS.canRedo()) LCS.redo(); };
+
+    // ---------- Shortcuts ----------
+    if (!window.__LCS_KEYS_BOUND__){
+      window.__LCS_KEYS_BOUND__ = true;
+      window.addEventListener('keydown', function(e){
+        if (!e.ctrlKey && !e.metaKey) return;
+        if (isEditable(e.target)) return;
+        var k=(e.key||'').toLowerCase(), sh=!!e.shiftKey;
+        if (k==='z' && !sh){ if (LCS.canUndo()){ e.preventDefault(); LCS.undo(); } return; }
+        if ((k==='z' && sh) || k==='y'){ if (LCS.canRedo()){ e.preventDefault(); LCS.redo(); } return; }
+      }, { passive:false });
+    }
+
+    // ---------- Auto-capture (detectează schimbări și împinge în istoric) ----------
+    if (!LCS.__autocaptureInstalled){
+      LCS.__autocaptureInstalled = true;
+      LCS.__autocaptureEnabled = true;  // poți dezactiva: window.LCS.setAutocapture(false)
+      var lastHash = null;
+      function tick(){
+        try{
+          if (!LCS.__autocaptureEnabled) return;
+          if (!LCS.__adaptersBound) return;
+          if (LCS.__applying) return; // nu captura în timpul undo/redo
+          var snap = window.getSnapshot ? window.getSnapshot() : null;
+          if (!snap) return;
+          var h = hashSnapshot(snap);
+          if (h !== lastHash){
+            lastHash = h;
+            LCS.push('auto-change');
+          }
+        } catch(_){}
+      }
+      var iv = setInterval(tick, 400); // debounce prin minIntervalMs = 80 în manager
+      LCS.setAutocapture = function(v){ LCS.__autocaptureEnabled = !!v; };
+      LCS.stopAutocapture = function(){ try{ clearInterval(iv); }catch(_){ } LCS.__autocaptureEnabled = false; };
+    }
+  })();
+  </script>
 </body>
 </html>
