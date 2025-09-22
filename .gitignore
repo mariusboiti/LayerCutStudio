@@ -1,13 +1,6 @@
 ﻿node_modules/
 dist/
-coverage/
-npm-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-.eslintcache
-.kilocode/tasks/
-.vscode/
+build/
+*.log
 .env
-.DS_Store
-Thumbs.db
-public/assets/fonts/*.zip
+.vscode/

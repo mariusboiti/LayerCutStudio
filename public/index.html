@@ -4,6 +4,63 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>LayerCut Studio — LaserFilesPro</title>
+  <!-- LCS boot stubs: prevenim "is not defined" pana se incarca istoricul -->
+  <script>
+  (function () {
+    if (!('pushHistory' in window)) window.pushHistory = function(){};
+    if (!('pushHistoryCoalesced' in window)) window.pushHistoryCoalesced = function(){};
+    if (!('undo' in window)) window.undo = function(){};
+    if (!('redo' in window)) window.redo = function(){};
+    if (!('resetDesign' in window)) window.resetDesign = function(){};
+    if (!window.LCS) {
+      window.LCS = { __isStub__: true, __q__: [],
+        setAdapters: function(){}, push: function(){}, undo: function(){}, redo: function(){},
+        canUndo: function(){return false;}, canRedo: function(){return false;}, state: function(){return {};}
+      };
+    }
+  })();
+  </script>
+  <!-- Boot stubs: previne "is not defined" pentru pushHistory/undo/redo -->
+  <script>
+  (function () {
+    // Stubs o singură dată
+    if (!('pushHistory' in window)) window.pushHistory = function(){};
+    if (!('pushHistoryCoalesced' in window)) window.pushHistoryCoalesced = function(){};
+    if (!('undo' in window)) window.undo = function(){};
+    if (!('redo' in window)) window.redo = function(){};
+
+    // Stub LCS minimal (opțional) ca să nu crape codul care îl atinge devreme
+    if (!window.LCS) {
+      window.LCS = { __isStub__: true, __q__: [],
+        setAdapters: function(){}, push: function(){}, undo: function(){}, redo: function(){},
+        canUndo: function(){return false;}, canRedo: function(){return false;}, state: function(){return {};}
+      };
+    }
+  })();
+  </script>
+  <!-- LCS Boot Shim: previne erorile "LCS is undefined" si coada apelurile timpurii -->
+  <script>
+  (function () {
+    if (window.LCS && !window.LCS.__isStub__) return;
+    const q = [];
+    const stub = {
+      __isStub__: true,
+      __q__: q,
+      setAdapters: (...a) => q.push(['setAdapters', a]),
+      push:        (...a) => q.push(['push', a]),
+      undo:        (...a) => q.push(['undo', a]),
+      redo:        (...a) => q.push(['redo', a]),
+      canUndo:     () => false,
+      canRedo:     () => false,
+      state:       () => ({}),
+      defaults:    {}
+    };
+    window.LCS = stub;
+    // expune fallback-uri globale ca sa nu mai pice onClick={undo}
+    if (!('undo' in window))  window.undo  = function () {};
+    if (!('redo' in window))  window.redo  = function () {};
+  })();
+  </script>
 
   <!-- React 18 + OpenType -->
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
@@ -853,9 +910,6 @@
     function App(){
       // STATE
       const [fontSizePx, setFontSizePx] = useState(140);
-      // === Undo/Redo history ===
-      const [history, setHistory] = React.useState([]);
-      const [historyIndex, setHistoryIndex] = React.useState(-1);
       const [selectedLineId, setSelectedLineId] = useState('line1');
       const [lines, setLines] = useState({
         line1: { x: 0, y: 0 }, line2: { x: 0, y: 0 }, line3: { x: 0, y: 0 }
@@ -916,36 +970,55 @@
         { id: 5, pad: Math.round((28 + 16*2)/3), color: "#6b7280", show: true, expanded: true }
       ]);
       const [layerCount, setLayerCount] = useState(3);
+      // === Zoom de preview (10% - 200%) + Fit ===
+      const [zoom, setZoom] = useState(() => {
+        try { return Number(localStorage.getItem('previewZoom')) || 1; } catch(_) { return 1; }
+      });
+      useEffect(() => { try { localStorage.setItem('previewZoom', String(zoom)); } catch(_) {} }, [zoom]);
+      // === Unități transform (trebuie DEFINIT devreme, e folosit de snapshot/undo) ===
+      const [unit, setUnit] = React.useState(() => {
+        try { return localStorage.getItem('transformUnit') || 'px'; } catch(_) { return 'px'; }
+      });
+      React.useEffect(() => { try { localStorage.setItem('transformUnit', unit); } catch(_) {} }, [unit]);
+  
+      const getSnapshot = useCallback(() => ({
+        text, text2, text3, fontSizePx, selectedLineId, lines, fontId, stickers, selectedStickerIdx, lineSpacing, letterSpacing, cTop, cMid, cBase, padMid, padBase, midExpandedPad, baseExpandedPad, padTop, round, showTop, showMid, showBase, midExpanded, baseExpanded, extraLayers, layerCount, zoom, unit
+      }), [text, text2, text3, fontSizePx, selectedLineId, lines, fontId, stickers, selectedStickerIdx, lineSpacing, letterSpacing, cTop, cMid, cBase, padMid, padBase, midExpandedPad, baseExpandedPad, padTop, round, showTop, showMid, showBase, midExpanded, baseExpanded, extraLayers, layerCount, zoom, unit]);
+  
+      const applySnapshot = useCallback((snap) => {
+        setFontSizePx(snap.fontSizePx);
+        setLines(snap.lines || { line1:{x:0,y:0}, line2:{x:0,y:0}, line3:{x:0,y:0} });
+        setText(snap.text); setText2(snap.text2); setText3(snap.text3);
+        setLineSpacing(snap.lineSpacing); setLetterSpacing(snap.letterSpacing);
+        setCTop(snap.cTop); setCMid(snap.cMid); setCBase(snap.cBase);
+        setPadMid(snap.padMid); setPadBase(snap.padBase); setPadTop(snap.padTop);
+        setRound(snap.round);
+        setShowTop(snap.showTop); setShowMid(snap.showMid); setShowBase(snap.showBase);
+        setMidExpanded(snap.midExpanded); setBaseExpanded(snap.baseExpanded);
+        setMidExpandedPad(snap.midExpandedPad); setBaseExpandedPad(snap.baseExpandedPad);
+        setExtraLayers(snap.extraLayers); setLayerCount(snap.layerCount);
+        setStickers(snap.stickers); setSelectedStickerIdx(snap.selectedStickerIdx);
+        setZoom(snap.zoom); setUnit(snap.unit);
+      }, []);
+  
+      useEffect(() => {
+        window.getSnapshot = getSnapshot;
+        window.applySnapshot = applySnapshot;
 
-      // Le expunem pe window, ca să fie chemate de butoanele deja legate în HTML
-      const resetDesign = () => {
-        setFontSizePx(140);
-        setSelectedLineId('line1');
-        setLines({ line1: { x: 0, y: 0 }, line2: { x: 0, y: 0 }, line3: { x: 0, y: 0 } });
-        setText("Marius");
-        setText2("");
-        setText3("");
-        setLineSpacing(0.95);
-        setLetterSpacing(0);
-        setCTop("#ffffff");
-        setCMid("#ef4444");
-        setCBase("#111827");
-        setPadMid(16);
-        setPadBase(28);
-        setPadTop(0);
-        setShowTop(true);
-        setShowMid(true);
-        setShowBase(true);
-        setMidExpanded(false);
-        setBaseExpanded(false);
-        setMidExpandedPad(null);
-        setBaseExpandedPad(null);
-        setExtraLayers([ { id: 4, pad: Math.round((28*2 + 16)/3), color: "#9ca3af", show: true, expanded: true }, { id: 5, pad: Math.round((28 + 16*2)/3), color: "#6b7280", show: true, expanded: true } ]);
-        setLayerCount(3);
-        setRound(true);
-        setZoom(1);
-        setUnit('px');
-      };
+        // Capturează snapshot-ul complet la primul mount și folosește-l ca defaults
+        if (!window.__LCS_BOOT_SNAPSHOT__) {
+          try {
+            const boot = getSnapshot();
+            window.__LCS_BOOT_SNAPSHOT__ = boot;
+            if (window.LCS && window.LCS.defaults !== undefined) {
+              // suprascriem defaults ca să includă TOT ce ai în app
+              window.LCS.defaults = (typeof structuredClone === 'function')
+                ? structuredClone(boot)
+                : JSON.parse(JSON.stringify(boot));
+            }
+          } catch (_) {}
+        }
+      }, [getSnapshot, applySnapshot]);
       
       function addStickerToCanvas(st){
         if(!st) return;
@@ -1136,61 +1209,8 @@
       const svgRef = useRef(null);
       const previewColors = useMemo(() => ({ top: cTop, mid: cMid, base: cBase }), [cTop, cMid, cBase]);
 
-      // === Zoom de preview (10% - 200%) + Fit ===
-      const [zoom, setZoom] = useState(() => {
-        try { return Number(localStorage.getItem('previewZoom')) || 1; } catch(_) { return 1; }
-      });
-      useEffect(() => { try { localStorage.setItem('previewZoom', String(zoom)); } catch(_) {} }, [zoom]);
 
-      // creează snapshot cu starea actuală
-      const makeSnapshot = React.useCallback(() => ({
-        stickers: JSON.parse(JSON.stringify(stickers)),
-        lines: JSON.parse(JSON.stringify(lines)),
-        layerCount,
-        fontSizePx,
-        zoom
-      }), [stickers, lines, layerCount, fontSizePx, zoom]);
 
-      // adaugă snapshot nou în history
-      const pushHistory = React.useCallback(() => {
-        const snap = makeSnapshot();
-        setHistory(prev => {
-          const next = prev.slice(0, historyIndex + 1).concat([snap]);
-          return next.slice(-50); // max 50 pași
-        });
-        setHistoryIndex(i => Math.min(history.length, i + 1));
-      }, [makeSnapshot, historyIndex, history.length]);
-
-      // === Undo/Redo functions ===
-      const undo = React.useCallback(() => {
-        setHistoryIndex(i => {
-          if (i <= 0) return i;
-          const prevSnap = history[i - 1];
-          if (prevSnap) {
-            setStickers(prevSnap.stickers);
-            setLines(prevSnap.lines);
-            setLayerCount(prevSnap.layerCount);
-            setFontSizePx(prevSnap.fontSizePx);
-            setZoom(prevSnap.zoom);
-          }
-          return i - 1;
-        });
-      }, [history]);
-
-      const redo = React.useCallback(() => {
-        setHistoryIndex(i => {
-          if (i >= history.length - 1) return i;
-          const nextSnap = history[i + 1];
-          if (nextSnap) {
-            setStickers(nextSnap.stickers);
-            setLines(nextSnap.lines);
-            setLayerCount(nextSnap.layerCount);
-            setFontSizePx(nextSnap.fontSizePx);
-            setZoom(nextSnap.zoom);
-          }
-          return i + 1;
-        });
-      }, [history]);
 
       const fitZoom = React.useCallback(() => {
         if (!textBBox) return;
@@ -1216,10 +1236,6 @@
       const PX_PER_IN = 96;
       const PX_PER_MM = PX_PER_IN / 25.4;
       const PX_PER_CM = PX_PER_IN / 2.54;
-      const [unit, setUnit] = React.useState(() => {
-        try { return localStorage.getItem('transformUnit') || 'px'; } catch(_) { return 'px'; }
-      });
-      React.useEffect(() => { try { localStorage.setItem('transformUnit', unit); } catch(_) {} }, [unit]);
       const pxToUnit = React.useCallback((px, u) => {
         if (!Number.isFinite(px)) return NaN;
         switch(u){
@@ -2031,8 +2047,8 @@
               style:{ background:"#ef4444", borderColor:"#ef4444" }
             }, "Resetare totală"),
             React.createElement("div", { key:"undo-redo-row", className:"controls-row", style:{gap:6} }, [
-              React.createElement("button", { onClick: undo, disabled: historyIndex<=0, className:"btn" }, "Undo"),
-              React.createElement("button", { onClick: redo, disabled: historyIndex>=history.length-1, className:"btn" }, "Redo")
+              React.createElement("button", { onClick: undo, className:"btn" }, "Undo"),
+              React.createElement("button", { onClick: redo, className:"btn" }, "Redo")
             ]),
             React.createElement("button", {
               key:"btn-export-all",
@@ -2112,4 +2128,519 @@
     ReactDOM.createRoot(document.getElementById("app")).render(React.createElement(App));
     console.log("%cindex.html simplu – gata", "color:#16a34a");
   </script>
+  <script>
+  window.LCS.setAdapters({ getSnapshot: window.getSnapshot, applySnapshot: window.applySnapshot });
+  </script>
+  <!-- 1) HistoryManager (fără dependențe) -->
+  <script>
+  (function () {
+    const now = () => Date.now();
+    const deepClone = (obj) => {
+      if (typeof structuredClone === 'function') return structuredClone(obj);
+      return JSON.parse(JSON.stringify(obj));
+    };
+
+    class HistoryManager {
+      constructor({ limit = 200, minIntervalMs = 80, coalesceWindowMs = 300 } = {}) {
+        this.limit = limit;
+        this.minIntervalMs = minIntervalMs;
+        this.coalesceWindowMs = coalesceWindowMs;
+        this.stack = [];
+        this.index = -1;
+        this._lastPushTs = 0;
+        this._lastReason = '';
+        this._isApplying = false;
+        this._adapters = {
+          getSnapshot: () => ({}),
+          applySnapshot: (_snap) => {},
+          onDidApply: null,
+        };
+      }
+      setAdapters({ getSnapshot, applySnapshot, onDidApply } = {}) {
+        if (typeof getSnapshot === 'function') this._adapters.getSnapshot = getSnapshot;
+        if (typeof applySnapshot === 'function') this._adapters.applySnapshot = applySnapshot;
+        if (typeof onDidApply === 'function') this._adapters.onDidApply = onDidApply;
+      }
+      _current() { return this.index >= 0 ? this.stack[this.index] : null; }
+      canUndo() { return this.index > 0; }
+      canRedo() { return this.index >= 0 && this.index < this.stack.length - 1; }
+      _shouldCoalesce(reason) {
+        const t = now();
+        return !!(reason && reason === this._lastReason && (t - this._lastPushTs) <= this.coalesceWindowMs);
+      }
+      push(reason = '') {
+        const t = now();
+        if (t - this._lastPushTs < this.minIntervalMs) return; // throttle anti-spam
+        const snap = deepClone(this._adapters.getSnapshot() || {});
+        // Dacă suntem în mijlocul stivei (după undo), tăiem viitorul
+        if (this.index < this.stack.length - 1) {
+          this.stack = this.stack.slice(0, this.index + 1);
+        }
+        if (this._shouldCoalesce(reason) && this.stack.length) {
+          this.stack[this.stack.length - 1] = snap;
+        } else {
+          this.stack.push(snap);
+          if (this.stack.length > this.limit) {
+            this.stack.shift();
+          } else {
+            this.index++;
+          }
+        }
+        this._lastPushTs = t;
+        this._lastReason = reason;
+      }
+      undo() {
+        if (!this.canUndo()) return;
+        this.index--;
+        this._applyCurrent('undo');
+      }
+      redo() {
+        if (!this.canRedo()) return;
+        this.index++;
+        this._applyCurrent('redo');
+      }
+      peek() { return this._current(); }
+      _applyCurrent(kind) {
+        const snap = this._current();
+        if (!snap) return;
+        let applied = null;
+        try {
+          this._isApplying = true;
+          applied = deepClone(snap);
+          this._adapters.applySnapshot(applied);
+        } finally {
+          this._isApplying = false;
+        }
+        if (this._adapters.onDidApply) this._adapters.onDidApply(kind, applied);
+        window.dispatchEvent(new CustomEvent('lcs:state-applied', { detail: { kind, snapshot: applied } }));
+      }
+    }
+
+    window.__LCS_HistoryManager__ = HistoryManager;
+  })();
+  </script>
+
+  <!-- 2) Adaptor + Defaults (evită TDZ și erori „Cannot access 'X' before initialization”) -->
+  <script>
+  (function () {
+    // DEFINIM starea implicită ÎNAINTE de orice folosire
+    const defaultState = {
+      version: 1,
+      text: '',
+      layers: [],
+      stickers: [],
+      colors: { palette: ['#000000', '#ffffff'], currentFill: '#000000', currentStroke: '#000000' },
+      strokeWidth: 1,
+      zoom: 1,      // <- definit aici, nu va exista TDZ
+      unit: 'mm',   // <- la fel
+      guides: [],
+      selection: null,
+      canvas: { width: 800, height: 480 },
+      meta: { updatedAt: Date.now() }
+    };
+
+    // Stare „aplicație” sigură (poți înlocui ulterior cu state-ul tău real)
+    var appState = (typeof structuredClone === 'function')
+      ? structuredClone(defaultState)
+      : JSON.parse(JSON.stringify(defaultState));
+
+    // Render extern (îl definim mai jos, după ce montăm React); aici doar îl referim
+    var renderApp = function noop() {};
+
+    // Utils
+    const deepClone = (obj) => (typeof structuredClone === 'function') ? structuredClone(obj) : JSON.parse(JSON.stringify(obj));
+    const assignState = (src) => { Object.assign(appState, src); appState.meta.updatedAt = Date.now(); };
+
+    // Inițializăm istoricul
+    const HistoryManager = window.__LCS_HistoryManager__;
+    const history = new HistoryManager({ limit: 250, minIntervalMs: 60, coalesceWindowMs: 280 });
+
+    history.setAdapters({
+      getSnapshot: () => deepClone(appState),
+      applySnapshot: (snap) => {
+        // normalizează înainte de a aplica
+        if (window.__LCS_NORMALIZE__) {
+          snap = window.__LCS_NORMALIZE__.normalizeSnapshot(snap);
+        }
+        assignState(snap);
+        renderApp(appState);
+      },
+      onDidApply: (kind, snap) => {
+        // Pentru siguranță, emitem event cu snap normalizat
+        if (window.__LCS_NORMALIZE__) {
+          snap = window.__LCS_NORMALIZE__.normalizeSnapshot(snap);
+        }
+        window.dispatchEvent(new CustomEvent('lcs:state-applied', { detail: { kind, snapshot: snap } }));
+      }
+    });
+
+    // API global prietenos
+    let _lastReasonTs = 0, _lastReason = '';
+    function LCS_coalescedPush(reason = '', windowMs = 220) {
+      const t = Date.now();
+      if (!(reason && reason === _lastReason && (t - _lastReasonTs) <= windowMs)) {
+        history.push(reason);
+        _lastReason = reason;
+      }
+      _lastReasonTs = t;
+    }
+
+    window.LCS = {
+      history,
+      push: (r) => history.push(r),
+      undo: () => history.undo(),
+      redo: () => history.redo(),
+      canUndo: () => history.canUndo(),
+      canRedo: () => history.canRedo(),
+      state: () => deepClone(history.peek() || appState),
+      setAdapters: (adapters) => history.setAdapters(adapters),
+      defaults: deepClone(defaultState),
+      coalescedPush: LCS_coalescedPush
+    };
+
+    // Shortcut-uri tastatură (Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y)
+    if (!window.__LCS_KEYS_BOUND__) {
+      window.__LCS_KEYS_BOUND__ = true;
+
+      const isEditableTarget = (el) => {
+        if (!el) return false;
+        const tag = (el.tagName || '').toLowerCase();
+        if (['input', 'textarea', 'select'].includes(tag)) return true;
+        return !!el.isContentEditable;
+      };
+
+      window.addEventListener('keydown', (e) => {
+        if (!e.ctrlKey && !e.metaKey) return;
+        if (isEditableTarget(e.target)) return; // nu furăm Ctrl+Z în inputuri
+        const key = (e.key || '').toLowerCase();
+        const isShift = !!e.shiftKey;
+
+        if (key === 'z' && !isShift) {
+          if (history.canUndo()) { e.preventDefault(); history.undo(); }
+          return;
+        }
+        if ((key === 'z' && isShift) || key === 'y') {
+          if (history.canRedo()) { e.preventDefault(); history.redo(); }
+          return;
+        }
+      }, { passive: false });
+    }
+
+    // Push inițial
+    history.push('init');
+
+    // Expunem global appState & render setter pentru demo
+    window.__LCS_INTERNAL__ = {
+      get appState() { return appState; },
+      setRender(fn) { renderApp = typeof fn === 'function' ? fn : renderApp; }
+    };
+  })();
+  </script>
+  <script>
+  (function () {
+    // Așteaptă până când Managerul real setează window.LCS (non-stub)
+    function ready(cb) {
+      if (window.LCS && !window.LCS.__isStub__) return cb();
+      const t = setInterval(() => {
+        if (window.LCS && !window.LCS.__isStub__) { clearInterval(t); cb(); }
+      }, 15);
+    }
+
+    ready(function () {
+      // 1) Drenăm coada din stub (dacă a existat)
+      if (window.__LCS_STUB__ && window.__LCS_STUB__.__q__) {
+        try {
+          const q = window.__LCS_STUB__.__q__;
+          q.forEach(([op, args]) => { if (typeof window.LCS[op] === 'function') window.LCS[op](...args); });
+        } catch (_) {}
+      } else if (window.LCS && window.LCS.__isStub__ && window.LCS.__q__) {
+        try {
+          const q = window.LCS.__q__;
+          // dacă încă e stub în acest moment, nu drena
+          // (dar în mod normal aici deja e realul)
+          q.forEach(([op, args]) => { if (typeof window.LCS[op] === 'function') window.LCS[op](...args); });
+        } catch (_) {}
+      }
+
+      // 2) Expune global undo/redo ca să funcționeze onClick={undo} / onClick={redo}
+      window.undo = function () { try { if (window.LCS?.canUndo()) window.LCS.undo(); } catch (_) {} };
+      window.redo = function () { try { if (window.LCS?.canRedo()) window.LCS.redo(); } catch (_) {} };
+
+      // 3) Shortcut-uri tastatură (o singură dată)
+      if (!window.__LCS_KEYS_BOUND__) {
+        window.__LCS_KEYS_BOUND__ = true;
+        const isEditable = (el) => {
+          if (!el) return false;
+          const tag = (el.tagName || '').toLowerCase();
+          if (['input','textarea','select'].includes(tag)) return true;
+          return !!el.isContentEditable;
+        };
+        window.addEventListener('keydown', (e) => {
+          if (!e.ctrlKey && !e.metaKey) return;
+          if (isEditable(e.target)) return;
+          const k = (e.key || '').toLowerCase();
+          const sh = !!e.shiftKey;
+          if (k === 'z' && !sh) {
+            if (window.LCS?.canUndo()) { e.preventDefault(); window.LCS.undo(); }
+            return;
+          }
+          if ((k === 'z' && sh) || k === 'y') {
+            if (window.LCS?.canRedo()) { e.preventDefault(); window.LCS.redo(); }
+            return;
+          }
+        }, { passive:false });
+      }
+    });
+  })();
+  </script>
+  <script>
+  (function () {
+    // așteaptă până când LCS real e încărcat (non-stub)
+    function whenReady(cb){
+      if (window.LCS && !window.LCS.__isStub__) return cb();
+      const t = setInterval(function(){
+        if (window.LCS && !window.LCS.__isStub__) { clearInterval(t); cb(); }
+      }, 15);
+    }
+    whenReady(function(){
+      // 1) leagă funcțiile globale la LCS
+      window.pushHistory = function(reason){ try{ window.LCS.push(reason||''); }catch(e){} };
+      // coalescing simplu: cheamă LCS.coalescedPush dacă există, altfel push
+      var _lastTs = 0, _lastR = '';
+      window.pushHistoryCoalesced = function(reason, windowMs){
+        reason = reason||''; windowMs = Number(windowMs)||250;
+        if (window.LCS && typeof window.LCS.coalescedPush === 'function') {
+          return window.LCS.coalescedPush(reason, windowMs);
+        }
+        var t = Date.now();
+        if (!(reason && reason===_lastR && (t-_lastTs)<=windowMs)) window.LCS.push(reason);
+        _lastR = reason; _lastTs = t;
+      };
+      window.undo = function(){ try{ if (window.LCS.canUndo()) window.LCS.undo(); }catch(e){} };
+      window.redo = function(){ try{ if (window.LCS.canRedo()) window.LCS.redo(); }catch(e){} };
+
+      // 2) shortcut-uri (o singură dată)
+      if (!window.__LCS_KEYS_BOUND__){
+        window.__LCS_KEYS_BOUND__ = true;
+        var isEditable = function(el){
+          if (!el) return false;
+          var tag = (el.tagName||'').toLowerCase();
+          if (['input','textarea','select'].includes(tag)) return true;
+          return !!el.isContentEditable;
+        };
+        window.addEventListener('keydown', function(e){
+          if (!e.ctrlKey && !e.metaKey) return;
+          if (isEditable(e.target)) return;
+          var k = (e.key||'').toLowerCase();
+          var sh = !!e.shiftKey;
+          if (k==='z' && !sh){ if (window.LCS.canUndo()){ e.preventDefault(); window.LCS.undo(); } return; }
+          if ((k==='z' && sh) || k==='y'){ if (window.LCS.canRedo()){ e.preventDefault(); window.LCS.redo(); } return; }
+        }, {passive:false});
+      }
+    });
+  })();
+  </script>
+  <script>
+  (function () {
+    function whenReady(cb){
+      if (window.LCS && !window.LCS.__isStub__) return cb();
+      const t = setInterval(function(){
+        if (window.LCS && !window.LCS.__isStub__) { clearInterval(t); cb(); }
+      }, 15);
+    }
+    whenReady(function(){
+      // push/undo/redo deja legate?
+      window.pushHistory = function(reason){ try{ window.LCS.push(reason||''); }catch(e){} };
+      var _lastTs = 0, _lastR = '';
+      window.pushHistoryCoalesced = function(reason, windowMs){
+        reason = reason||''; windowMs = Number(windowMs)||250;
+        if (typeof window.LCS.coalescedPush === 'function') return window.LCS.coalescedPush(reason, windowMs);
+        var t = Date.now();
+        if (!(reason && reason===_lastR && (t-_lastTs)<=windowMs)) window.LCS.push(reason);
+        _lastR = reason; _lastTs = t;
+      };
+      window.undo = function(){ try{ if (window.LCS.canUndo()) window.LCS.undo(); }catch(e){} };
+      window.redo = function(){ try{ if (window.LCS.canRedo()) window.LCS.redo(); }catch(e){} };
+
+      // resetDesign: revine la defaults + impinge snapshot in istoric
+      window.resetDesign = function(){
+        try {
+          // preferă snapshot-ul real capturat la boot; dacă nu există, cade pe LCS.defaults
+          var base = window.__LCS_BOOT_SNAPSHOT__ || (window.LCS && window.LCS.defaults) || null;
+          if (!base) {
+            window.dispatchEvent(new CustomEvent('lcs:reset-requested'));
+            return;
+          }
+
+          // clona + opțional normalizează (dacă ai utilitarul din patch-urile anterioare)
+          var raw = (typeof structuredClone==='function') ? structuredClone(base) : JSON.parse(JSON.stringify(base));
+          var snap = (window.__LCS_NORMALIZE__ && typeof window.__LCS_NORMALIZE__.normalizeSnapshot === 'function')
+            ? window.__LCS_NORMALIZE__.normalizeSnapshot(raw)
+            : raw;
+
+          // aplică snapshot-ul prin adaptor (asigură re-render)
+          if (typeof window.applySnapshot === 'function') {
+            window.applySnapshot(snap);
+          } else if (window.__LCS_INTERNAL__ && window.__LCS_INTERNAL__.appState) {
+            Object.assign(window.__LCS_INTERNAL__.appState, snap);
+            window.dispatchEvent(new CustomEvent('lcs:state-applied', { detail:{ kind:'reset', snapshot:snap } }));
+          } else if (window.appState) {
+            Object.assign(window.appState, snap);
+            window.dispatchEvent(new CustomEvent('lcs:state-applied', { detail:{ kind:'reset', snapshot:snap } }));
+          } else {
+            window.dispatchEvent(new CustomEvent('lcs:reset-requested'));
+          }
+
+          // resetează istoria la snapshot-ul curent
+          if (window.LCS && window.LCS.history) {
+            var keep = (typeof structuredClone==='function') ? structuredClone(snap) : JSON.parse(JSON.stringify(snap));
+            window.LCS.history.stack = [keep];
+            window.LCS.history.index = 0;
+          }
+
+          // marchează reset în istoric (opțional; nu afectează snapshot-ul păstrat)
+          if (window.LCS && typeof window.LCS.push === 'function') window.LCS.push('reset');
+
+          console.info('[resetDesign] done');
+        } catch(e) {
+          console.error('[resetDesign] error:', e);
+        }
+      };
+
+      // Shortcut-uri (o singură dată)
+      if (!window.__LCS_KEYS_BOUND__){
+        window.__LCS_KEYS_BOUND__ = true;
+        var isEditable = function(el){
+          if (!el) return false;
+          var tag = (el.tagName||'').toLowerCase();
+          if (['input','textarea','select'].includes(tag)) return true;
+          return !!el.isContentEditable;
+        };
+        window.addEventListener('keydown', function(e){
+          if (!e.ctrlKey && !e.metaKey) return;
+          if (isEditable(e.target)) return;
+          var k = (e.key||'').toLowerCase();
+          var sh = !!e.shiftKey;
+          if (k==='z' && !sh){ if (window.LCS.canUndo()){ e.preventDefault(); window.LCS.undo(); } return; }
+          if ((k==='z' && sh) || k==='y'){ if (window.LCS.canRedo()){ e.preventDefault(); window.LCS.redo(); } return; }
+        }, {passive:false});
+      }
+    });
+  })();
+  </script>
+  <!-- LCS Snapshot Normalizer + key helper -->
+  <script>
+  (function () {
+    // Generează un ID stabil-ish pentru key în liste
+    function ensureKey(idx, item) {
+      if (item && (item.id || item.key)) return item.id || item.key;
+      return 'k_' + idx;
+    }
+    window.ensureKey = ensureKey;
+
+    // Completează câmpuri lipsă pe obiecte cunoscute (text lines/layers/stickers etc.)
+    function fillKnownDefaults(obj) {
+      if (!obj || typeof obj !== 'object') return obj;
+
+      // 1) textLines: [{ line1, line2, font, size }]
+      if (!Array.isArray(obj.textLines)) obj.textLines = [];
+      obj.textLines = obj.textLines.filter(Boolean).map(function (t) {
+        t = t && typeof t === 'object' ? t : {};
+        if (typeof t.line1 !== 'string') t.line1 = '';
+        if (typeof t.line2 !== 'string') t.line2 = '';
+        if (typeof t.font !== 'string')  t.font = 'Inter';
+        if (typeof t.size !== 'number')  t.size = 24;
+        if (!('align' in t))             t.align = 'center';
+        return t;
+      });
+
+      // 2) layers: stabilizează câmpuri de bază
+      if (!Array.isArray(obj.layers)) obj.layers = [];
+      obj.layers = obj.layers.filter(Boolean).map(function (l, i) {
+        l = l && typeof l === 'object' ? l : {};
+        if (!('id' in l)) l.id = 'L' + (i + 1);
+        if (!('name' in l)) l.name = 'Layer ' + (i + 1);
+        if (!('visible' in l)) l.visible = true;
+        if (!('order' in l)) l.order = i;
+        if (!('stroke' in l)) l.stroke = '#000000';
+        if (!('fill' in l)) l.fill = '#ffffff';
+        if (!('strokeWidth' in l)) l.strokeWidth = 1;
+        return l;
+      });
+
+      // 3) stickers: normalizează obiectele
+      if (!Array.isArray(obj.stickers)) obj.stickers = [];
+      obj.stickers = obj.stickers.filter(Boolean).map(function (s, i) {
+        s = s && typeof s === 'object' ? s : {};
+        if (!('id' in s)) s.id = 'S' + (i + 1);
+        if (!('type' in s)) s.type = 'shape';
+        if (!('x' in s)) s.x = 0;
+        if (!('y' in s)) s.y = 0;
+        if (!('r' in s)) s.r = 0;
+        if (!('sx' in s)) s.sx = 1;
+        if (!('sy' in s)) s.sy = 1;
+        if (!('props' in s)) s.props = {};
+        return s;
+      });
+
+      // 4) colors
+      if (!obj.colors || typeof obj.colors !== 'object') {
+        obj.colors = { palette: ['#000000', '#ffffff'], currentFill: '#000000', currentStroke: '#000000' };
+      } else {
+        if (!Array.isArray(obj.colors.palette)) obj.colors.palette = ['#000000', '#ffffff'];
+        if (typeof obj.colors.currentFill !== 'string') obj.colors.currentFill = '#000000';
+        if (typeof obj.colors.currentStroke !== 'string') obj.colors.currentStroke = '#000000';
+      }
+
+      // 5) valori scalar/struct
+      if (typeof obj.strokeWidth !== 'number') obj.strokeWidth = 1;
+      if (typeof obj.zoom !== 'number' || !isFinite(obj.zoom)) obj.zoom = 1;
+      if (typeof obj.unit !== 'string') obj.unit = 'mm';
+      if (!Array.isArray(obj.guides)) obj.guides = [];
+      if (!('selection' in obj)) obj.selection = null;
+      if (!obj.canvas || typeof obj.canvas !== 'object') obj.canvas = { width: 800, height: 600 };
+      if (typeof obj.canvas.width !== 'number') obj.canvas.width = 800;
+      if (typeof obj.canvas.height !== 'number') obj.canvas.height = 600;
+      if (!obj.meta || typeof obj.meta !== 'object') obj.meta = { updatedAt: Date.now() };
+      if (typeof obj.meta.updatedAt !== 'number') obj.meta.updatedAt = Date.now();
+
+      return obj;
+    }
+
+    // Curăță recursiv orice array din snapshot (scoate undefined / null)
+    function sanitizeArraysRec(obj, depth) {
+      if (!obj || typeof obj !== 'object' || depth > 5) return obj;
+      if (Array.isArray(obj)) {
+        obj = obj.filter(Boolean).map(function (el) {
+          return sanitizeArraysRec(el, depth + 1);
+        });
+        return obj;
+      }
+      for (var k in obj) {
+        if (!Object.prototype.hasOwnProperty.call(obj, k)) continue;
+        obj[k] = sanitizeArraysRec(obj[k], depth + 1);
+      }
+      return obj;
+    }
+
+    // Normalizator complet, folosit la reset/undo/redo
+    function normalizeSnapshot(snap) {
+      try {
+        // clone ușor ca să nu modificăm by-ref dacă apelantul nu vrea
+        var s = (typeof structuredClone === 'function')
+          ? structuredClone(snap)
+          : JSON.parse(JSON.stringify(snap));
+        s = sanitizeArraysRec(s, 0);
+        s = fillKnownDefaults(s);
+        return s;
+      } catch (e) {
+        console.warn('[normalizeSnapshot] fallback:', e);
+        return snap;
+      }
+    }
+
+    window.__LCS_NORMALIZE__ = { normalizeSnapshot: normalizeSnapshot };
+  })();
+  </script>
+</body>
 </html>
