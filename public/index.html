@@ -2763,5 +2763,124 @@
     } catch(e) { /* silent */ }
   })();
   </script>
+  <!-- Outline Smoother v2: CSS round joins + Catmull-Rom smoothing on SVG paths -->
+  <style id="lcs-outline-style">
+    svg { shape-rendering: geometricPrecision; }
+    svg path { stroke-linejoin: round; stroke-linecap: round; }
+  </style>
+  <script>
+  (function(){
+    if (window.__LCS_OUTLINE_SMOOTHER__) return; // evită dublarea
+    window.__LCS_OUTLINE_SMOOTHER__ = true;
+
+    // === utilitare ===
+    function samplePath(el, maxSamples){
+      if (!(el && el.getTotalLength)) return null;
+      var len = el.getTotalLength();
+      var n = Math.max(32, Math.min(maxSamples||800, Math.round(len/3))); // 3px pas
+      var pts = [];
+      for (var i=0;i<=n;i++){
+        var p = el.getPointAtLength((i/n)*len);
+        pts.push([p.x, p.y]);
+      }
+      return pts;
+    }
+    // Catmull-Rom (uniform, s=1) → cubic Bezier pe segment [p1,p2]
+    function catmullRomToBezier(p0,p1,p2,p3){
+      var s = 1; // tensiune
+      var c1x = p1[0] + (p2[0]-p0[0]) / 6 * s;
+      var c1y = p1[1] + (p2[1]-p0[1]) / 6 * s;
+      var c2x = p2[0] - (p3[0]-p1[0]) / 6 * s;
+      var c2y = p2[1] - (p3[1]-p1[1]) / 6 * s;
+      return [[c1x,c1y],[c2x,c2y],[p2[0],p2[1]]];
+    }
+    function pointsToCubicPath(pts, closed){
+      if (!pts || pts.length < 2) return '';
+      // dacă path-ul e închis, duplicăm capetele pentru continuitate
+      var P = pts.slice();
+      if (closed){
+        P.unshift(pts[pts.length-2] || pts[0]);
+        P.unshift(pts[pts.length-1] || pts[0]);
+        P.push(pts[0], pts[1]||pts[0]);
+      } else {
+        // capete: duplicate p0/pn pentru cond. de margine
+        P.unshift(pts[0]); P.push(pts[pts.length-1]);
+      }
+      var d = 'M ' + pts[0][0] + ' ' + pts[0][1];
+      for (var i=0; i < P.length-3; i++){
+        var b = catmullRomToBezier(P[i], P[i+1], P[i+2], P[i+3]);
+        d += ' C ' + b[0][0] + ' ' + b[0][1] + ' ' + b[1][0] + ' ' + b[1][1] + ' ' + b[2][0] + ' ' + b[2][1];
+      }
+      if (closed) d += ' Z';
+      return d;
+    }
+    function isClosed(el){
+      try { return /z\s*$/i.test((el.getAttribute('d')||'').trim()); } catch(_) { return false; }
+    }
+    function smoothOnePath(el){
+      if (!(el && el.tagName === 'path')) return;
+      if (el.dataset && el.dataset.smoothed === '1') return; // o singură dată
+      var pts = samplePath(el, 900);
+      if (!pts || pts.length < 4) return;
+      var closed = isClosed(el);
+      var d = pointsToCubicPath(pts, closed);
+      if (d && d.length > 0){
+        el.setAttribute('d', d);
+        el.setAttribute('stroke-linejoin','round');
+        el.setAttribute('stroke-linecap','round');
+        el.dataset.smoothed = '1';
+      }
+    }
+    function smoothAllPaths(root){
+      try {
+        (root || document).querySelectorAll('svg path').forEach(smoothOnePath);
+      } catch(_){ }
+    }
+    // rulează cu un mic debounce după schimbări mari
+    var _tm = 0;
+    function scheduleSmooth(ms){
+      clearTimeout(_tm);
+      _tm = setTimeout(function(){ smoothAllPaths(document); }, ms||40);
+    }
+
+    // 1) inițial
+    if (document.readyState === 'loading'){
+      document.addEventListener('DOMContentLoaded', function(){ scheduleSmooth(10); });
+    } else {
+      scheduleSmooth(10);
+    }
+
+    // 2) după apăsarea butoanelor "Set"
+    document.addEventListener('click', function(e){
+      var t = e.target;
+      if (!t || t.tagName !== 'BUTTON') return;
+      var label = (t.textContent || '').trim().toLowerCase();
+      if (label === 'set'){ scheduleSmooth(30); }
+    }, true);
+
+    // 3) după undo/redo/reset (eveniment din managerul nostru)
+    window.addEventListener('lcs:state-applied', function(){ scheduleSmooth(30); });
+
+    // 4) dacă DOM-ul adaugă SVG-uri noi, le netezim câteva secunde
+    try {
+      var mo = new MutationObserver(function(muts){
+        var touched = false;
+        muts.forEach(function(m){
+          m.addedNodes && m.addedNodes.forEach(function(n){
+            if (n && n.nodeType===1){
+              if (n.tagName && n.tagName.toLowerCase()==='path') touched = true;
+              if (n.querySelector && n.querySelector('svg path')) touched = true;
+            }
+          });
+        });
+        if (touched) scheduleSmooth(30);
+      });
+      mo.observe(document.documentElement, { childList:true, subtree:true });
+      setTimeout(function(){ try{ mo.disconnect(); }catch(_){ } }, 6000);
+    } catch(_){ }
+
+    console.info('[LCS] Outline Smoother v2 active');
+  })();
+  </script>
 </body>
 </html>
