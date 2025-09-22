@@ -1,0 +1,1158 @@
+﻿<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>LayerCut Studio — LaserFilesPro</title>
+
+  <!-- React 18 + OpenType -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/opentype.js@1.3.4/dist/opentype.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/clipper-lib@6.4.2/clipper.js"></script>
+
+  <style>
+    :root { --ui: #e5e7eb; --grid: #eef2f7; }
+    /* feedback minim pt randul selectat (optional) */
+    [data-selected="1"] { outline: 1px dashed #888; outline-offset: 2px; }
+    /* Eye toggle */
+    .layer-row{ display:flex; align-items:center; gap:8px; }
+    .eye-btn{
+      width:32px; height:28px; border-radius:8px;
+      border:1px solid #d1d5db; background:#fff; cursor:pointer;
+      display:flex; align-items:center; justify-content:center;
+    }
+    .eye-btn svg{ width:18px; height:18px; display:block; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; background:#fafafa; }
+    /* Full-width: fără margini laterale, container întins pe toată pagina */
+    .wrap { max-width: none; margin: 0; padding: 0; width: 100%; }
+    /* A doua coloană umple tot, fără spațiu pe margini; păstrăm doar spațiul dintre coloane */
+    .row { display: grid; grid-template-columns: 360px minmax(0,1fr); gap: 0 16px; align-items: start; }
+    .card { background: #fff; border:1px solid #e5e7eb; border-radius: 12px; padding: 16px; }
+
+    /* Titluri/etichete mai vizibile */
+    h2 { font-size: 28px; font-weight: 800; margin: 16px 0; letter-spacing: .2px; }
+    .label {
+      font-size: 13px;
+      font-weight: 600;
+      color:#111827;
+      margin-top: 8px;
+      margin-bottom: 6px;
+    }
+    input[type="number"], input[type="text"], select {
+      width: 100%; padding:8px 10px; border-radius:8px;
+      border:1px solid #d1d5db; background:#fff; outline:none;
+    }
+    input[type="color"]{ width:44px; height:28px; padding:0; border:1px solid #d1d5db; border-radius:8px; background:#fff;}
+    .controls-row { display: grid; grid-template-columns: 1fr 1fr; gap:8px; }
+    /* Transform panel */
+    .transform-grid { display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
+    .transform-grid .cell { display:flex; flex-direction:column; }
+    .transform-grid .label { font-size:11px; font-weight:600; margin:0 0 2px 0; }
+    .transform-grid input[type="number"]{ padding:6px 8px; font-size:13px; }
+    /* triplet compact pe un singur rând */
+    .controls-row-3 { display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; }
+    /* menține mic etichetele din grupul compact (spațiere rânduri / font size / litere) */
+    .control-compact .label { font-size:11px; font-weight:600; margin: 0 0 2px 0; }
+    .control-compact input[type="number"]{ padding:6px 8px; font-size:13px; }
+
+    .grid {
+      width:100%; height:700px; border-radius:12px; border:1px solid var(--ui); background:#fff;
+      background-image:
+        linear-gradient(var(--grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+      background-size: 20px 20px, 20px 20px;
+      position: relative; overflow: hidden;
+    }
+
+    .btn {
+      display:inline-block; padding:10px 14px; border-radius:10px; border:1px solid #111827;
+      background:#111827; color:#fff; cursor:pointer; user-select:none; text-align:center;
+    }
+    .btn:disabled { opacity:.6; cursor:not-allowed; }
+    .hint { font-size:12px; color:#6b7280; margin-top:10px; }
+
+    /* icon button pentru toggle vizibilitate */
+    .icon-btn{
+      width:32px; height:32px; display:inline-grid; place-items:center;
+      border:1px solid #d1d5db; border-radius:8px; background:#fff; cursor:pointer;
+    }
+    .icon-btn[aria-pressed="false"]{ opacity:.45; }
+    .icon-btn svg{ display:block }
+
+    /* HUD (ascuns) */
+    .hud { display:none !important; }
+   /* === Topbar (brand) === */
+   .topbar{
+     position: sticky; top: 0; z-index: 50;
+     width:100%; background:#fff; border-bottom:1px solid #e5e7eb;
+     box-shadow: 0 1px 0 rgba(0,0,0,0.02);
+   }
+   .topbar-inner{
+     display:flex; align-items:center; gap:12px;
+     padding:10px 16px;
+   }
+   .brand-logo{ width:28px; height:28px; display:inline-block; }
+   .brand-name{ font-size:18px; font-weight:800; letter-spacing:.2px; color:#111827; }
+   .brand-meta{ font-size:12px; color:#6b7280; }
+   .brand-meta strong{ color:#111827; font-weight:700; }
+   /* Zoom overlay jos-dreapta în canvas */
+   .zoom-overlay{
+     position:absolute; right:12px; bottom:12px;
+     background:rgba(17,24,39,.9); color:#fff;
+     padding:8px 12px; border-radius:10px;
+     display:flex; gap:8px; align-items:center;
+     box-shadow:0 6px 16px rgba(0,0,0,.2);
+     backdrop-filter: blur(2px);
+   }
+   .zoom-overlay input[type="range"]{ width:170px; }
+   .zoom-overlay .btn{ padding:6px 10px; background:#0f172a; border-color:#0f172a; }
+   .svg-preview { display:block; width:100%; height:100%; }
+  </style>
+</head>
+ <!-- KILO BEACON: confirm că acest index.html e servit -->
+ <script>
+   (function(){
+     try {
+       console.log("KILO ACTIVE FILE:", "D:/marius/Aplicatie Laser CUt/Aplicatie Laser CUt/public/index.html", "@", new Date().toISOString());
+     } catch(e){}
+   })();
+ </script>
+<body>
+    <!-- KILO TEST BANNER (ABS PATH) -->
+    <div id="kilo-banner" style="position:sticky;top:0;z-index:9999;background:#2563eb;color:#fff;padding:8px 12px;text-align:center;font-weight:700;font-family:system-ui">
+      KILO PATCH OK ✅ (ABS PATH)
+    </div>
+  <div class="topbar">
+   <div class="topbar-inner">
+     <!-- logo simplu (două forme suprapuse) -->
+     <svg class="brand-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+       <rect x="3" y="5" width="14" height="14" rx="3" fill="#111827"></rect>
+       <rect x="7" y="3" width="14" height="14" rx="3" fill="#ef4444"></rect>
+     </svg>
+     <span class="brand-name">LayerCut Studio</span>
+     <span class="brand-meta">by <strong>LaserFilesPro</strong> • <span id="appver">v0.1.0</span></span>
+   </div>
+ </div>
+
+ <div class="wrap">
+    <div id="app" class="row"></div>
+  </div>
+  <!-- HUD eliminat (ascuns) -->
+  <div id="hud" class="hud"></div>
+
+  <script>
+   /* branding */
+   const APP_NAME = "LayerCut Studio";
+   const APP_VENDOR = "LaserFilesPro";
+   const APP_VERSION = "v0.1.0";
+   try {
+     document.title = `${APP_NAME} — ${APP_VENDOR}`;
+     var vEl = document.getElementById('appver'); if (vEl) vEl.textContent = APP_VERSION;
+   } catch(_) {}
+
+   /* ===== Guard numeric helpers: fixed() =====
+      Unele patchuri au mutat/scris peste helper-ele vechi.
+      Acest bloc garantează existența lui `fixed` înainte de folosire. */
+   if (typeof window.fixed !== 'function') {
+     window.fixed = function(value, digits){
+       var d = (typeof digits === 'number' && digits >= 0) ? digits : 2;
+       var n;
+       if (typeof value === 'number') n = Number.isFinite(value) ? value : NaN;
+       else if (value == null || value === '') n = NaN;
+       else n = parseFloat(String(value).replace(',', '.'));
+       if (!Number.isFinite(n)) {
+         var base = '0'; if (d > 0) base += '.' + '0'.repeat(d);
+         return base;
+       }
+       var p = Math.pow(10, d);
+       var s = String(Math.round(n * p) / p);
+       if (d > 0) {
+         var i = s.indexOf('.');
+         if (i === -1) s += '.' + '0'.repeat(d);
+         else {
+           var dec = s.length - i - 1;
+           if (dec < d) s += '0'.repeat(d - dec);
+         }
+       }
+       return s;
+     };
+   }
+   // Creează și bindingul global `fixed` dacă lipsește (unele browsere nu-l leagă automat de window.*)
+   if (typeof fixed === 'undefined') { var fixed = window.fixed; }
+
+    const { useEffect, useMemo, useRef, useState, useCallback } = React;
+
+    // HUD + error logs (utile la debug)
+    window.addEventListener('error', ev => {
+      console.log('[RUNTIME ERROR]', ev.message, 'at', ev.filename + ':' + ev.lineno + ':' + ev.colno);
+    });
+    // helper HUD global (no-op)
+    window.__setHUD = () => {};
+
+    // Helpers numerice (evită value invalid/NaN pe <input>)
+    const toNum = (v, fb = 0) => {
+      if (typeof v === 'number') return Number.isFinite(v) ? v : fb;
+      if (v == null || v === '') return fb;
+      const n = parseFloat(String(v).replace(',', '.'));
+      return Number.isFinite(n) ? n : fb;
+    };
+    const toValueStr = (v) => {
+      const n = toNum(v, null);
+      return n === null ? '' : String(n);
+    };
+
+    const DESIGN_W = 1200, DESIGN_H = 700;
+    const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+
+    // Fonts I/O
+    function loadFontsList() {
+      return fetch("/assets/fonts/fonts.json", { cache: "no-store" })
+        .then(r => { if (!r.ok) throw new Error("fonts.json not found"); return r.json(); })
+        .then(list => Array.isArray(list) ? list.filter(f => f && (f.id || f.file) && f.file) : []);
+    }
+    async function loadFontFile(url) {
+      const r = await fetch(url, { cache: "no-store" });
+      if (!r.ok) throw new Error("TTF fetch failed: " + url);
+      const buf = await r.arrayBuffer();
+      return opentype.parse(buf);
+    }
+
+    // Paths din text (un rând)
+    function makePathFromText(font, text, fontSize, x, y, letterSpacing=0, glyphsOverride=null) {
+      if (!font || !text) return { d: "", bbox: null };
+      const glyphs = glyphsOverride || font.stringToGlyphs(text);
+      if (!glyphs.length) return { d: "", bbox: null };
+      const scale = fontSize / font.unitsPerEm;
+      let cx = x, d = "";
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+      for (let i=0; i<glyphs.length; i++) {
+        const g = glyphs[i], prev = i ? glyphs[i-1] : null;
+        if (prev) cx += font.getKerningValue(prev, g) * scale;
+        const p = g.getPath(cx, y, fontSize);
+        d += p.toPathData(3) + " ";
+        const box = p.getBoundingBox();
+        if (Number.isFinite(box.x1) && Number.isFinite(box.x2) && Number.isFinite(box.y1) && Number.isFinite(box.y2)) {
+          if (box.x1 < minX) minX = box.x1;
+          if (box.y1 < minY) minY = box.y1;
+          if (box.x2 > maxX) maxX = box.x2;
+          if (box.y2 > maxY) maxY = box.y2;
+        }
+        cx += (g.advanceWidth || font.unitsPerEm) * scale;
+        if (i < glyphs.length - 1) cx += letterSpacing;
+      }
+      const hasBox = Number.isFinite(minX) && Number.isFinite(minY) && Number.isFinite(maxX) && Number.isFinite(maxY);
+      return { d: d.trim(), bbox: hasBox ? { minX, minY, maxX, maxY } : null };
+    }
+
+    // === Expand helpers (stroke -> filled shape) ===
+    function otPathToPolys(otPath, flatnessPx=0.6){
+      const polys=[]; let curr=[]; const add=(pt)=>{const l=curr[curr.length-1]; if(!l||l.X!==pt.x||l.Y!==pt.y) curr.push({X:pt.x,Y:pt.y});};
+      let pen={x:0,y:0}, start={x:0,y:0};
+      const chord=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+      const approxQ=(p0,p1,p2)=>chord(p0,p1)+chord(p1,p2);
+      const approxC=(p0,p1,p2,p3)=>chord(p0,p1)+chord(p1,p2)+chord(p2,p3);
+      const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+      const SQ=(p0,p1,p2,s)=>{for(let i=1;i<=s;i++){const t=i/s,mt=1-t; add({x:mt*mt*p0.x+2*mt*t*p1.x+t*t*p2.x,y:mt*mt*p0.y+2*mt*t*p1.y+t*t*p2.y});}};
+      const SC=(p0,p1,p2,p3,s)=>{for(let i=1;i<=s;i++){const t=i/s,mt=1-t; add({x:mt*mt*mt*p0.x+3*mt*mt*t*p1.x+3*mt*t*t*p2.x+t*t*t*p3.x,y:mt*mt*mt*p0.y+3*mt*mt*t*p1.y+3*mt*t*t*p2.y+t*t*t*p3.y});}};
+      for(const c of (otPath.commands||[])){
+        if(c.type==='M'){ if(curr.length>2) polys.push(curr); curr=[]; pen={x:c.x,y:c.y}; start=pen; add(pen); }
+        else if(c.type==='L'){ add({x:c.x,y:c.y}); pen={x:c.x,y:c.y}; }
+        else if(c.type==='Q'){ const s=clamp(Math.ceil(approxQ(pen,{x:c.x1,y:c.y1},{x:c.x,y:c.y})/flatnessPx),6,64); SQ(pen,{x:c.x1,y:c.y1},{x:c.x,y:c.y},s); pen={x:c.x,y:c.y}; }
+        else if(c.type==='C'){ const s=clamp(Math.ceil(approxC(pen,{x:c.x1,y:c.y1},{x:c.x2,y:c.y2},{x:c.x,y:c.y})/flatnessPx),10,96); SC(pen,{x:c.x1,y:c.y1},{x:c.x2,y:c.y2},{x:c.x,y:c.y},s); pen={x:c.x,y:c.y}; }
+        else if(c.type==='Z'){ if(curr.length>2) polys.push(curr); curr=[]; pen=start; }
+      }
+      if(curr.length>2) polys.push(curr); return polys;
+    }
+    function makePolysFromText(font, text, fontSize, x, y, letterSpacing=0){
+      if(!font||!text) return []; const glyphs=font.stringToGlyphs(text);
+      const scale=fontSize/font.unitsPerEm; let cx=x; const all=[];
+      for(let i=0;i<glyphs.length;i++){
+        const g=glyphs[i], prev=i?glyphs[i-1]:null; if(prev) cx+=font.getKerningValue(prev,g)*scale;
+        all.push(...otPathToPolys(g.getPath(cx,y,fontSize),0.6));
+        cx+=(g.advanceWidth||font.unitsPerEm)*scale; if(i<glyphs.length-1) cx+=letterSpacing;
+      }
+      return all;
+    }
+    function polysUnionAndOffset(polys, delta){
+      if(!Array.isArray(polys)||!polys.length||typeof ClipperLib==='undefined') return "";
+      const S=1000, toI=pp=>pp.map(p=>({X:Math.round(p.X*S),Y:Math.round(p.Y*S)})), fromI=pp=>pp.map(p=>({x:p.X/S,y:p.Y/S}));
+      let subj=polys.map(toI);
+      subj=ClipperLib.Clipper.CleanPolygons(subj,0.1*S);
+      subj=ClipperLib.Clipper.SimplifyPolygons(subj,ClipperLib.PolyFillType.pftEvenOdd);
+      const c=new ClipperLib.Clipper(); c.AddPaths(subj,ClipperLib.PolyType.ptSubject,true);
+      const uni=[]; c.Execute(ClipperLib.ClipType.ctUnion,uni,ClipperLib.PolyFillType.pftEvenOdd,ClipperLib.PolyFillType.pftEvenOdd);
+      const co=new ClipperLib.ClipperOffset(2.0,0.25*S); co.AddPaths(ClipperLib.Clipper.CleanPolygons(uni,0.08*S),ClipperLib.JoinType.jtRound,ClipperLib.EndType.etClosedPolygon);
+      const sol=[]; co.Execute(sol, Math.round(Math.max(0.25,delta)*S));
+      let d=""; for(const path of ClipperLib.Clipper.CleanPolygons(sol,0.05*S)){ const poly=fromI(path); if(poly.length<2) continue; d+=`M ${poly[0].x.toFixed(2)} ${poly[0].y.toFixed(2)} `; for(let i=1;i<poly.length;i++){ d+=`L ${poly[i].x.toFixed(2)} ${poly[i].y.toFixed(2)} `;} d+="Z "; }
+      return d.trim();
+    }
+
+    function Preview({
+      svgRef,
+      paths,
+      textBBox,
+      colors,
+      padMid,
+      padBase,
+      padTop,
+      showTop,
+      showMid,
+      showBase,
+      rounded,
+      fontSizePx,
+      setFontSizePx,
+      lineData,
+      lineOffsets,
+      setLines,
+      zoom,
+      midExpanded,
+      midExpandedD,
+      baseExpanded,
+      baseExpandedD
+    }) {
+      const dragRef   = useRef({ active: false, index: -1, sx: 0, sy: 0, ox: 0, oy: 0 });
+      const scaleRef  = useRef({ active: false, cx: 0, cy: 0, startDist: 1, startSize: fontSizePx });
+      const anchorRef = useRef({ active: false, cx: 0, cy: 0 });
+      const wheelTimerRef = useRef(null);
+
+      const clientToSVG = useCallback((evt) => {
+        const svg = svgRef?.current || null;
+        if (!svg) return { x: 0, y: 0 };
+        const pt = svg.createSVGPoint();
+        pt.x = evt.clientX; pt.y = evt.clientY;
+        const m = svg.getScreenCTM(); if (!m) return { x: 0, y: 0 };
+        const inv = m.inverse(); const p = inv ? pt.matrixTransform(inv) : pt;
+        return { x: p.x, y: p.y };
+      }, [svgRef]);
+
+      const onMove = useCallback((evt) => {
+        if (!dragRef.current.active) return;
+        evt.preventDefault();
+        const { x, y } = clientToSVG(evt);
+        const dx = Math.round(x - dragRef.current.sx);
+        const dy = Math.round(y - dragRef.current.sy);
+        const target = lineOffsets?.[dragRef.current.index];
+        if (!target) return;
+        if (target.setX) target.setX(dragRef.current.ox + dx);
+        if (target.setY) target.setY(dragRef.current.oy + dy);
+      }, [clientToSVG, lineOffsets]);
+
+      const onUp = useCallback(() => {
+        if (!dragRef.current.active) return;
+        dragRef.current.active = false;
+        dragRef.current.index = -1;
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+      }, [onMove]);
+
+      const beginDrag = useCallback((evt, idx) => {
+        const target = lineOffsets?.[idx];
+        if (!target) return;
+        evt.preventDefault();
+        const { x, y } = clientToSVG(evt);
+        dragRef.current = {
+          active: true,
+          index: idx,
+          sx: x,
+          sy: y,
+          ox: target.x || 0,
+          oy: target.y || 0
+        };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp, { once: true });
+      }, [clientToSVG, lineOffsets, onMove, onUp]);
+
+      const centerFromBBox = (bb) => bb ? {
+        cx: (bb.minX + bb.maxX) / 2,
+        cy: (bb.minY + bb.maxY) / 2
+      } : null;
+
+      const scaleCenter = useMemo(() => centerFromBBox(textBBox), [textBBox]);
+
+      const onScaleMove = useCallback((evt) => {
+        if (!scaleRef.current.active) return;
+        evt.preventDefault();
+        const { x, y } = clientToSVG(evt);
+        const distance = Math.hypot(x - scaleRef.current.cx, y - scaleRef.current.cy) || 1;
+        let ratio = distance / scaleRef.current.startDist;
+        if (evt.shiftKey) ratio = 1 + (ratio - 1) * 0.35;
+        let next = scaleRef.current.startSize * ratio;
+        next = Math.max(20, Math.min(5000, next));
+        setFontSizePx(Math.round(next));
+      }, [clientToSVG, setFontSizePx]);
+
+      const onScaleUp = useCallback(() => {
+        if (!scaleRef.current.active) return;
+        scaleRef.current.active = false;
+        window.removeEventListener('mousemove', onScaleMove);
+        window.removeEventListener('mouseup', onScaleUp);
+        anchorRef.current.active = false;
+      }, [onScaleMove]);
+
+      const onScaleDown = useCallback((evt) => {
+        if (!textBBox || !scaleCenter) return;
+        evt.preventDefault(); evt.stopPropagation();
+        const { x, y } = clientToSVG(evt);
+        const dist = Math.hypot(x - scaleCenter.cx, y - scaleCenter.cy) || 1;
+        scaleRef.current = {
+          active: true, cx: scaleCenter.cx, cy: scaleCenter.cy,
+          startDist: dist, startSize: fontSizePx
+        };
+        anchorRef.current = { active: true, cx: scaleCenter.cx, cy: scaleCenter.cy };
+        window.addEventListener('mousemove', onScaleMove);
+        window.addEventListener('mouseup', onScaleUp, { once: true });
+      }, [clientToSVG, fontSizePx, onScaleMove, onScaleUp, scaleCenter, textBBox]);
+
+      // Ctrl+Wheel zoom
+      useEffect(() => {
+        const svg = svgRef.current;
+        if (!svg) return;
+        const onWheel = (e) => {
+          if (!e.ctrlKey || !textBBox) return;
+          e.preventDefault();
+          const c = centerFromBBox(textBBox);
+          if (!anchorRef.current.active && c) anchorRef.current = { active: true, cx: c.cx, cy: c.cy };
+          const zoomIn = e.deltaY < 0;
+          const base = zoomIn ? 1.12 : (1 / 1.12);
+          const factor = e.shiftKey ? (1 + (base - 1) * 0.35) : base;
+          let next = fontSizePx * factor;
+          next = Math.max(20, Math.min(5000, next));
+          setFontSizePx(Math.round(next));
+          if (wheelTimerRef.current) clearTimeout(wheelTimerRef.current);
+          wheelTimerRef.current = setTimeout(() => { anchorRef.current.active = false; }, 200);
+        };
+        svg.addEventListener('wheel', onWheel, { passive: false });
+        return () => {
+          svg.removeEventListener('wheel', onWheel);
+          if (wheelTimerRef.current) clearTimeout(wheelTimerRef.current);
+        };
+      }, [fontSizePx, textBBox, setFontSizePx]);
+
+      // Re-centrare după scale (un singur setLines batched – evită loop)
+      useEffect(() => {
+        if (!anchorRef.current.active || !textBBox) return;
+        const c = centerFromBBox(textBBox);
+        if (!c) return;
+        const dx = anchorRef.current.cx - c.cx;
+        const dy = anchorRef.current.cy - c.cy;
+        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+          if (typeof setLines === 'function') {
+            setLines(prev => {
+              const out = prev && typeof prev === 'object' ? { ...prev } : {};
+              ['line1','line2','line3'].forEach(k => {
+                const cur = out[k] || {};
+                out[k] = { ...cur, x: (cur.x || 0) + dx, y: (cur.y || 0) + dy };
+              });
+              return out;
+            });
+          }
+        }
+      }, [textBBox, setLines]);
+
+      const lineJoin = rounded ? "round" : "miter";
+      // grosimi pe layer, controlate din UI
+      const midStroke  = Math.max(1, Math.round(padMid  || 0));
+      const baseStroke = Math.max(1, Math.round(padBase || 0));
+      const topStroke  = Math.max(0, Math.round(padTop  || 0)); // 0 = fără contur
+      const { base = "#111827", mid = "#ef4444", top = "#ffffff" } = colors || {};
+      const showHandle = Boolean(paths && paths.length && textBBox);
+
+      return React.createElement(
+        "svg",
+        {
+          ref: svgRef, xmlns: "http://www.w3.org/2000/svg",
+          width: "100%", height: "100%",
+          viewBox: `0 0 ${DESIGN_W} ${DESIGN_H}`,
+          preserveAspectRatio: "xMidYMid meet",
+          className: "svg-preview",
+          onMouseLeave: onUp
+        },
+        // crosshair (nu se scalează cu zoom)
+        React.createElement("line", { x1: DESIGN_W/2, y1: 0, x2: DESIGN_W/2, y2: DESIGN_H, stroke: "#cbd5e1", strokeWidth: 1 }),
+        React.createElement("line", { x1: 0, y1: DESIGN_H/2, x2: DESIGN_W, y2: DESIGN_H/2, stroke: "#cbd5e1", strokeWidth: 1 }),
+
+        // conținutul scalat: traducem față de centrul canvasului ca să rămână fix în mijloc
+        React.createElement("g", {
+          key: "zoomwrap",
+          transform: `translate(${(DESIGN_W/2)*(1-zoom)}, ${(DESIGN_H/2)*(1-zoom)}) scale(${zoom})`
+        }, [
+          // layer base (FILL + STROKE)
+          ...(showBase ? (paths || []).map((d, i) => React.createElement("path", { key: `base-fill-${i}`, d, fill: base })) : []),
+          ...(showBase ? (paths || []).map((d, i) => React.createElement("path", {
+            key: `base-stroke-${i}`, d, fill: "none", stroke: base,
+            strokeWidth: baseStroke, strokeLinejoin: lineJoin, strokeLinecap: rounded ? "round" : "butt", "data-layer": "base"
+          })) : []),
+          ...(showBase && baseExpanded && baseExpandedD ? [
+            React.createElement("path", { key:"base-expanded", d: baseExpandedD, fill: base })
+          ] : []),
+          // layer mid (FILL + STROKE)
+          ...(showMid ? (paths || []).map((d, i) => React.createElement("path", { key: `mid-fill-${i}`, d, fill: mid })) : []),
+          ...(showMid ? (paths || []).map((d, i) => React.createElement("path", {
+            key: `mid-stroke-${i}`, d, fill: "none", stroke: mid,
+            strokeWidth: midStroke, strokeLinejoin: lineJoin, strokeLinecap: rounded ? "round" : "butt", "data-layer": "mid"
+          })) : []),
+          ...(showMid && midExpanded && midExpandedD ? [
+            React.createElement("path", { key:"mid-expanded", d: midExpandedD, fill: mid })
+          ] : []),
+          // layer top
+          ...(showTop ? (paths || []).map((d, i) => React.createElement("path", { key: `top-${i}`, d, fill: top })) : []),
+
+          // zone drag pe fiecare rând
+          ...(lineData || []).map((line) => React.createElement("path", {
+            key: `drag-${line.index}`,
+            d: line.d, fill: "transparent", stroke: "transparent", strokeWidth: 20,
+            style: { cursor: "move" }, onMouseDown: (evt) => beginDrag(evt, line.index)
+          })),
+
+          // handle scale
+          showHandle ? React.createElement("circle", {
+            key: "scale", cx: textBBox.maxX, cy: textBBox.maxY, r: 14,
+            fill: base, stroke: "#ffffff", strokeWidth: 2,
+            style: { cursor: "nwse-resize" }, onMouseDown: onScaleDown
+          }) : null
+        ])
+      );
+    }
+
+    /* mic helper pentru iconița ochi / ochi-tăiat */
+    function EyeIcon(visible){
+      return React.createElement("svg", {
+        width:18, height:18, viewBox:"0 0 24 24", fill:"none",
+        stroke:"currentColor", strokeWidth:2, strokeLinecap:"round", strokeLinejoin:"round"
+      }, [
+        React.createElement("path", { key:"p", d:"M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" }),
+        React.createElement("circle", { key:"c", cx:12, cy:12, r:3 }),
+        visible ? null : React.createElement("line", { key:"l", x1:3, y1:3, x2:21, y2:21 })
+      ]);
+    }
+
+    function App(){
+      // STATE
+      const [fontSizePx, setFontSizePx] = useState(140);
+      const [selectedLineId, setSelectedLineId] = useState('line1');
+      const [lines, setLines] = useState({
+        line1: { x: 0, y: 0 }, line2: { x: 0, y: 0 }, line3: { x: 0, y: 0 }
+      });
+
+      // Fonts
+      const [fonts, setFonts] = useState([]);
+      const [fontId, setFontId] = useState("");
+      const [font, setFont] = useState(null);
+      const [loadMsg, setLoadMsg] = useState("");
+
+      // Text (până la 3 rânduri)
+      const [text, setText]   = useState("Marius");
+      const [text2, setText2] = useState("");
+      const [text3, setText3] = useState("");
+
+      // Layout
+      const [lineSpacing, setLineSpacing] = useState(0.95);
+      const [letterSpacing, setLetterSpacing] = useState(0);
+
+      // Culori & look
+      const [cTop, setCTop]   = useState("#ffffff");
+      const [cMid, setCMid]   = useState("#ef4444");
+      const [cBase, setCBase] = useState("#111827");
+      // Grosimi per layer
+      const [padMid, setPadMid]   = useState(16); // default aprox. 0.55 * 28
+      const [padBase, setPadBase] = useState(28);
+      // KILO test flag (doar pentru verificare patch)
+      const [midExpandedTest, setMidExpandedTest] = React.useState(false);
+      function applyExpandMiddleTest(){
+        console.log("KILO TEST: Set clicked");
+        setMidExpandedTest(true);
+      }
+      const [padTop,  setPadTop]  = useState(0);
+      const [round, setRound] = useState(true);
+      // Vizibilitate layere (există deja în export; ne asigurăm că sunt în stare și folosite în Preview)
+      const [showTop, setShowTop]   = useState(() => { try { return JSON.parse(localStorage.getItem('showTop')  ?? 'true'); } catch(_) { return true; } });
+      const [showMid, setShowMid]   = useState(() => { try { return JSON.parse(localStorage.getItem('showMid')  ?? 'true'); } catch(_) { return true; } });
+      const [showBase, setShowBase] = useState(() => { try { return JSON.parse(localStorage.getItem('showBase') ?? 'true'); } catch(_) { return true; } });
+      useEffect(()=>{ try{ localStorage.setItem('showTop',  JSON.stringify(showTop)); }catch(_){}} ,[showTop]);
+      useEffect(()=>{ try{ localStorage.setItem('showMid',  JSON.stringify(showMid)); }catch(_){}} ,[showMid]);
+      useEffect(()=>{ try{ localStorage.setItem('showBase', JSON.stringify(showBase)); }catch(_){}} ,[showBase]);
+
+      // Expand flags (controlate din butoanele Set)
+      const [midExpanded, setMidExpanded]   = useState(false);
+      const [baseExpanded, setBaseExpanded] = useState(false);
+
+      // Le expunem pe window, ca să fie chemate de butoanele deja legate în HTML
+      useEffect(() => {
+        window.applyExpandMid  = () => setMidExpanded(true);
+        window.applyExpandBase = () => setBaseExpanded(true);
+        return () => {
+          delete window.applyExpandMid;
+          delete window.applyExpandBase;
+        };
+      }, []);
+
+      const scale = useMemo(() => fontSizePx / 100, [fontSizePx]);
+
+      // HUD
+      const hudFontLabel = useMemo(() => {
+        const it = fonts.find(f => (f.id ?? f.file) === fontId);
+        return it?.label || it?.id || it?.file || "(fără font)";
+      }, [fonts, fontId]);
+      useEffect(() => {
+        const linesCount = [text, text2, text3].filter(Boolean).length;
+        if (window.__setHUD) window.__setHUD(`Font: ${hudFontLabel} • Size: ${fontSizePx}px • Linii: ${linesCount}`);
+      }, [hudFontLabel, fontSizePx, text, text2, text3]);
+
+      // Load fonts list
+      useEffect(() => {
+        (async () => {
+          try {
+            const list = await loadFontsList();
+            setFonts(list);
+            if (list.length) setFontId(list[0].id ?? list[0].file);
+          } catch (e) {
+            setLoadMsg("Nu pot încărca fonts.json ("+e.message+")");
+          }
+        })();
+      }, []);
+
+      // Load selected font
+      useEffect(() => {
+        let stop = false;
+        (async () => {
+          const it = fonts.find(f => (f.id ?? f.file) === fontId);
+          if (!it) { setFont(null); return; }
+          try {
+            setLoadMsg("Se încarcă fontul...");
+            const f = await loadFontFile(it.file);
+            if (!stop) { setFont(f); setLoadMsg(""); }
+          } catch (e) {
+            if (!stop) { setFont(null); setLoadMsg("Eroare font: " + e.message); }
+          }
+        })();
+        return () => { stop = true; };
+      }, [fontId, fonts]);
+
+      // Layout (paths/bbox/lines)
+      const layout = useMemo(() => {
+        if (!font) return { paths: [], bbox: null, lines: [] };
+        const rawLines = [text, text2, text3].filter(Boolean);
+        if (!rawLines.length) return { paths: [], bbox: null, lines: [] };
+
+        const spacing = Number.isFinite(lineSpacing) && lineSpacing > 0 ? lineSpacing : 1;
+        const totalHeight = fontSizePx + (rawLines.length - 1) * fontSizePx * spacing;
+        const baselineTop = DESIGN_H / 2 - totalHeight / 2;
+
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        const perLine = [];
+        const offsets = [
+          lines.line1 || { x: 0, y: 0 },
+          lines.line2 || { x: 0, y: 0 },
+          lines.line3 || { x: 0, y: 0 }
+        ];
+
+        for (let idx = 0; idx < rawLines.length; idx++) {
+          const value = rawLines[idx];
+          const glyphs = font.stringToGlyphs(value);
+          if (!glyphs.length) continue;
+
+          const scale = fontSizePx / font.unitsPerEm;
+          let width = 0, prev = null;
+          for (let i = 0; i < glyphs.length; i++) {
+            const g = glyphs[i];
+            if (prev) width += font.getKerningValue(prev, g) * scale;
+            width += (g.advanceWidth || font.unitsPerEm) * scale;
+            if (i < glyphs.length - 1) width += letterSpacing;
+            prev = g;
+          }
+
+          const baseLine = baselineTop + fontSizePx + idx * fontSizePx * spacing;
+          const off = offsets[idx] || { x: 0, y: 0 };
+          const y = Math.round(baseLine) + off.y;
+          const x = DESIGN_W / 2 - width / 2 + off.x;
+
+          const { d, bbox } = makePathFromText(font, value, fontSizePx, x, y, letterSpacing, glyphs);
+          if (!d) continue;
+
+          perLine.push({ d, bbox, index: idx, x, y, value });
+
+          if (bbox) {
+            if (bbox.minX < minX) minX = bbox.minX;
+            if (bbox.minY < minY) minY = bbox.minY;
+            if (bbox.maxX > maxX) maxX = bbox.maxX;
+            if (bbox.maxY > maxY) maxY = bbox.maxY;
+          }
+        }
+
+        const allPolys = perLine.flatMap(line =>
+          makePolysFromText(font, line.value, fontSizePx, line.x, line.y, letterSpacing)
+        );
+        const midExpandedD = polysUnionAndOffset(allPolys, padMid);
+        const baseExpandedD = polysUnionAndOffset(allPolys, padBase);
+
+        const hasBox = Number.isFinite(minX) && Number.isFinite(minY) && Number.isFinite(maxX) && Number.isFinite(maxY);
+        const paths = perLine.map(line => line.d);
+        return { paths, bbox: hasBox ? { minX, minY, maxX, maxY } : null, lines: perLine, midExpandedD, baseExpandedD };
+      }, [font, text, text2, text3, fontSizePx, lines, lineSpacing, letterSpacing]);
+
+      const { paths, bbox: textBBox, lines: lineData, midExpandedD, baseExpandedD } = layout;
+      const svgRef = useRef(null);
+      const previewColors = useMemo(() => ({ top: cTop, mid: cMid, base: cBase }), [cTop, cMid, cBase]);
+
+      // === Zoom de preview (10% - 200%) + Fit ===
+      const [zoom, setZoom] = useState(() => {
+        try { return Number(localStorage.getItem('previewZoom')) || 1; } catch(_) { return 1; }
+      });
+      useEffect(() => { try { localStorage.setItem('previewZoom', String(zoom)); } catch(_) {} }, [zoom]);
+      const fitZoom = React.useCallback(() => {
+        if (!textBBox) return;
+        const w = (textBBox.maxX - textBBox.minX);
+        const h = (textBBox.maxY - textBBox.minY);
+        if (!(w>0 && h>0)) return;
+        const margin = 40; // px de margine vizuală
+        const zx = (DESIGN_W - margin) / w;
+        const zy = (DESIGN_H - margin) / h;
+        const z = clamp(Math.min(zx, zy), 0.05, 2);
+        setZoom(z);
+      }, [textBBox]);
+      const resetZoom = React.useCallback(() => setZoom(1), []);
+
+      // === TRANSFORM (X, Y, W, H) – poziție și dimensiune pe bbox ===
+      const curBBox = textBBox;
+      const curW = useMemo(() => curBBox ? (curBBox.maxX - curBBox.minX) : 0, [curBBox]);
+      const curH = useMemo(() => curBBox ? (curBBox.maxY - curBBox.minY) : 0, [curBBox]);
+      const curCX = useMemo(() => curBBox ? (curBBox.minX + curBBox.maxX)/2 : 0, [curBBox]);
+      const curCY = useMemo(() => curBBox ? (curBBox.minY + curBBox.maxY)/2 : 0, [curBBox]);
+
+      /* ===== Unități pentru Transform (px / mm / cm / in) ===== */
+      const PX_PER_IN = 96;
+      const PX_PER_MM = PX_PER_IN / 25.4;
+      const PX_PER_CM = PX_PER_IN / 2.54;
+      const [unit, setUnit] = React.useState(() => {
+        try { return localStorage.getItem('transformUnit') || 'px'; } catch(_) { return 'px'; }
+      });
+      React.useEffect(() => { try { localStorage.setItem('transformUnit', unit); } catch(_) {} }, [unit]);
+      const pxToUnit = React.useCallback((px, u) => {
+        if (!Number.isFinite(px)) return NaN;
+        switch(u){
+          case 'mm': return px / PX_PER_MM;
+          case 'cm': return px / PX_PER_CM;
+          case 'in': return px / PX_PER_IN;
+          default:   return px; // px
+        }
+      }, []);
+      const unitToPx = React.useCallback((v, u) => {
+        const n = toNum(v, NaN);
+        if (!Number.isFinite(n)) return NaN;
+        switch(u){
+          case 'mm': return n * PX_PER_MM;
+          case 'cm': return n * PX_PER_CM;
+          case 'in': return n * PX_PER_IN;
+          default:   return n; // px
+        }
+      }, []);
+      const stepByUnit = { px: 1, mm: 0.1, cm: 0.01, in: 0.001 };
+      const digits = (unit === 'px') ? 0 : 2;
+      // valori afișate în UI (convertite)
+      const dispX = curBBox ? fixed(pxToUnit(curCX, unit), digits) : "";
+      const dispY = curBBox ? fixed(pxToUnit(curCY, unit), digits) : "";
+      const dispW = curBBox ? fixed(pxToUnit(curW,  unit), digits) : "";
+      const dispH = curBBox ? fixed(pxToUnit(curH,  unit), digits) : "";
+      // handler-e care acceptă valori în unitatea curentă
+      const onXChangeU = (e) => {
+        const vpx = unitToPx(e.target.value, unit);
+        if (Number.isFinite(vpx)) moveToCenter(vpx, curCY);
+      };
+      const onYChangeU = (e) => {
+        const vpx = unitToPx(e.target.value, unit);
+        if (Number.isFinite(vpx)) moveToCenter(curCX, vpx);
+      };
+      const onWChangeU = (e) => {
+        const vpx = unitToPx(e.target.value, unit);
+        if (curW > 0 && Number.isFinite(vpx)) scaleUniformBy(vpx / curW);
+      };
+      const onHChangeU = (e) => {
+        const vpx = unitToPx(e.target.value, unit);
+        if (curH > 0 && Number.isFinite(vpx)) scaleUniformBy(vpx / curH);
+      };
+
+      const moveToCenter = React.useCallback((nx, ny) => {
+        if (!curBBox) return;
+        const dx = (nx ?? curCX) - curCX;
+        const dy = (ny ?? curCY) - curCY;
+        if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) return;
+        setLines(prev => ({
+          line1: { ...(prev.line1 || {}), x: (prev.line1?.x||0) + dx, y: (prev.line1?.y||0) + dy },
+          line2: { ...(prev.line2 || {}), x: (prev.line2?.x||0) + dx, y: (prev.line2?.y||0) + dy },
+          line3: { ...(prev.line3 || {}), x: (prev.line3?.x||0) + dx, y: (prev.line3?.y||0) + dy },
+        }));
+      }, [curBBox, curCX, curCY, setLines]);
+
+      const scaleUniformBy = React.useCallback((factor) => {
+        if (!Number.isFinite(factor) || factor <= 0) return;
+        const next = clamp(Math.round(fontSizePx * factor), 8, 5000);
+        setFontSizePx(next);
+        // centrul rămâne neschimbat (layout-ul nostru e centrat pe orizontală),
+        // dar ca să fim siguri, re-fixăm centrul la valoarea curentă
+        // după ce se actualizează bbox-ul (într-un micro-task).
+        setTimeout(() => moveToCenter(curCX, curCY), 0);
+      }, [fontSizePx, moveToCenter, curCX, curCY, setFontSizePx]);
+
+      const onXChange = (e) => {
+        const v = toNum(e.target.value, curCX);
+        moveToCenter(v, curCY);
+      };
+      const onYChange = (e) => {
+        const v = toNum(e.target.value, curCY);
+        moveToCenter(curCX, v);
+      };
+      const onWChange = (e) => {
+        const v = toNum(e.target.value, curW);
+        if (curW > 0) scaleUniformBy(v / curW);
+      };
+      const onHChange = (e) => {
+        const v = toNum(e.target.value, curH);
+        if (curH > 0) scaleUniformBy(v / curH);
+      };
+
+      const lineOffsets = useMemo(() => ([
+        { x: lines.line1?.x || 0, y: lines.line1?.y || 0, setX: (v) => setLines(prev => ({ ...prev, line1: { ...prev.line1 || {}, x: v } })), setY: (v) => setLines(prev => ({ ...prev, line1: { ...prev.line1 || {}, y: v } })) },
+        { x: lines.line2?.x || 0, y: lines.line2?.y || 0, setX: (v) => setLines(prev => ({ ...prev, line2: { ...prev.line2 || {}, x: v } })), setY: (v) => setLines(prev => ({ ...prev, line2: { ...prev.line2 || {}, y: v } })) },
+        { x: lines.line3?.x || 0, y: lines.line3?.y || 0, setX: (v) => setLines(prev => ({ ...prev, line3: { ...prev.line3 || {}, x: v } })), setY: (v) => setLines(prev => ({ ...prev, line3: { ...prev.line3 || {}, y: v } })) }
+      ]), [lines, setLines]);
+
+      // Export SVG
+      function downloadSVG(){
+        if (!paths || !paths.length) return;
+        const lineJoin = round ? "round" : "miter";
+        const lineCap  = round ? "round" : "butt";
+        const midStroke  = Math.max(1, Math.round(padMid  || 0));
+        const baseStroke = Math.max(1, Math.round(padBase || 0));
+        const topStroke  = Math.max(0, Math.round(padTop  || 0));
+        const outlineMid = false;
+        const outlineBase = false;
+        // respectă vizibilitatea: showTop/showMid/showBase
+        let out = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${DESIGN_W} ${DESIGN_H}" width="${DESIGN_W}" height="${DESIGN_H}">`;
+        if (showBase) {
+          if (baseExpanded && baseExpandedD) {
+            out += `<path d="${baseExpandedD}" fill="${cBase}"/>`;
+          } else {
+            (paths||[]).forEach(d=>{ if(!outlineBase) out+=`<path d="${d}" fill="${cBase}"/>`; out+=`<path d="${d}" fill="none" stroke="${cBase}" stroke-width="${baseStroke}" stroke-linejoin="${lineJoin}" stroke-linecap="${lineCap}"/>`;});
+          }
+        }
+        if (showMid) {
+          if (midExpanded && midExpandedD) {
+            out += `<path d="${midExpandedD}" fill="${cMid}"/>`;
+          } else {
+            (paths||[]).forEach(d=>{ if(!outlineMid) out+=`<path d="${d}" fill="${cMid}"/>`; out+=`<path d="${d}" fill="none" stroke="${cMid}" stroke-width="${midStroke}" stroke-linejoin="${lineJoin}" stroke-linecap="${lineCap}"/>`;});
+          }
+        }
+        if (showTop) {
+          if (topStroke>0) {
+            paths.forEach(d => {
+              out += `<path d="${d}" fill="none" stroke="${cTop}" stroke-width="${topStroke}" stroke-linejoin="${lineJoin}" stroke-linecap="${lineCap}"/>`;
+            });
+          }
+          paths.forEach(d => {
+            out += `<path d="${d}" fill="${cTop}"/>`;
+          });
+        }
+        out += `</svg>`;
+        const blob = new Blob([out], { type: "image/svg+xml" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "text-3layers.svg";
+        a.click();
+        URL.revokeObjectURL(a.href);
+      }
+      function downloadSingleLayer(layerKey){
+        if (!paths || !paths.length) return;
+        const lineJoin = round ? "round" : "miter";
+        const lineCap = round ? "round" : "butt";
+        const midStroke = Math.max(1, Math.round(padMid  || 0));
+        const baseStroke = Math.max(1, Math.round(padBase || 0));
+        const topStroke  = Math.max(0, Math.round(padTop  || 0));
+        const outlineMid = false;
+        const outlineBase = false;
+        let layerSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${DESIGN_W} ${DESIGN_H}" width="${DESIGN_W}" height="${DESIGN_H}">`;
+        if (layerKey === "top") {
+          paths.forEach(d => {
+            if (topStroke>0) layerSVG += `<path d="${d}" fill="none" stroke="${cTop}" stroke-width="${topStroke}" stroke-linejoin="${lineJoin}" stroke-linecap="${lineCap}"/>`;
+            layerSVG += `<path d="${d}" fill="${cTop}"/>`;
+          });
+        } else if (layerKey === "mid") {
+          if (midExpanded && midExpandedD) {
+            layerSVG += `<path d="${midExpandedD}" fill="${cMid}"/>`;
+          } else {
+            (paths||[]).forEach(d=>{ if(!outlineMid) layerSVG+=`<path d="${d}" fill="${cMid}"/>`; layerSVG+=`<path d="${d}" fill="none" stroke="${cMid}" stroke-width="${midStroke}" stroke-linejoin="${lineJoin}" stroke-linecap="${lineCap}"/>`;});
+          }
+        } else if (layerKey === "base") {
+          if (baseExpanded && baseExpandedD) {
+            layerSVG += `<path d="${baseExpandedD}" fill="${cBase}"/>`;
+          } else {
+            (paths||[]).forEach(d=>{ if(!outlineBase) layerSVG+=`<path d="${d}" fill="${cBase}"/>`; layerSVG+=`<path d="${d}" fill="none" stroke="${cBase}" stroke-width="${baseStroke}" stroke-linejoin="${lineJoin}" stroke-linecap="${lineCap}"/>`;});
+          }
+        }
+        layerSVG += `</svg>`;
+        const blob = new Blob([layerSVG], { type: "image/svg+xml" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `text-3layers-${layerKey}.svg`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      }
+
+      // UI
+      return React.createElement(
+        React.Fragment,
+        null,
+
+        // Panou stânga: scroll vertical ca să rămână canvasul vizibil
+        React.createElement(
+          "div",
+          {
+            className:"card",
+            style:{
+              position:"sticky", top:16,
+              maxHeight:"calc(100vh - 48px)",  // 24px margine sus + jos din .wrap
+              overflowY:"auto",
+              overscrollBehavior:"contain"
+            }
+          },
+
+          React.createElement("div", { className:"label" }, "Font"),
+          React.createElement(
+            "select",
+            { value: fontId, onChange: e=>setFontId(e.target.value) },
+            ...(fonts.map(f => React.createElement("option", { key:(f.id ?? f.file), value:(f.id ?? f.file) }, f.label || f.id || f.file)))
+          ),
+          loadMsg ? React.createElement("div", { className:"hint" }, loadMsg) : null,
+
+          React.createElement("div", { className:"label" }, "Text (rând 1)"),
+          React.createElement("input", { type:"text", value:text, onInput:e=>setText(e.target.value) }),
+
+          React.createElement("div", { className:"label", style:{marginTop:10} }, "Text 2 (opțional)"),
+          React.createElement("input", { type:"text", value:text2, onInput:e=>setText2(e.target.value) }),
+
+          React.createElement("div", { className:"label", style:{marginTop:10} }, "Text 3 (opțional)"),
+          React.createElement("input", { type:"text", value:text3, onInput:e=>setText3(e.target.value) }),
+
+          React.createElement("div", { className:"controls-row-3 control-compact", style:{marginTop:10} }, [
+            React.createElement("div", { className:"control" }, [
+              React.createElement("div", { className:"label" }, "Spațiere rânduri"),
+              React.createElement("input", {
+                type:"number", step:"0.05", min:"0.4", max:"3",
+                value: toValueStr(lineSpacing),
+                onChange: e => {
+                  const v = toNum(e.target.value, 0.95);
+                  setLineSpacing(v > 0 ? Math.min(3, Math.max(0.4, v)) : 0.95);
+                }
+              })
+            ]),
+            React.createElement("div", { className:"control" }, [
+              React.createElement("div", { className:"label" }, "Font size"),
+              React.createElement("input", {
+                type:"number", min:10, max:5000,
+                value: toValueStr(fontSizePx),
+                onChange: e => setFontSizePx(toNum(e.target.value, 140))
+              })
+            ]),
+            React.createElement("div", { className:"control" }, [
+              React.createElement("div", { className:"label" }, "Spațiere litere"),
+              React.createElement("input", {
+                type:"number", step:"0.5", min:"-10", max:"100",
+                value: toValueStr(letterSpacing),
+                onChange: e => setLetterSpacing(clamp(toNum(e.target.value, 0), -10, 100))
+              })
+            ])
+          ]),
+ 
+          // Mutare se face direct în canvas (drag) sau cu săgeți (±1px / Shift ±10px)
+          React.createElement("div", { className:"hint" }, "Mută textul direct în canvas (drag) • Săgeți: ±1px, cu Shift: ±10px"),
+
+          /* (mutat în overlay-ul din canvas) */
+
+          // === Transform (tip Illustrator – referință: centru) ===
+          React.createElement("div", { className:"label", style:{marginTop:10} }, "Transform"),
+          React.createElement("div", { className:"controls-row" }, [
+            React.createElement("div", null, [
+              React.createElement("div", { className:"label" }, "Unități"),
+              React.createElement("select", {
+                value: unit,
+                onChange: e => setUnit(e.target.value)
+              }, [
+                React.createElement("option", { key:"px", value:"px" }, "px"),
+                React.createElement("option", { key:"mm", value:"mm" }, "mm"),
+                React.createElement("option", { key:"cm", value:"cm" }, "cm"),
+                React.createElement("option", { key:"in", value:"in" }, "in")
+              ])
+            ]),
+            React.createElement("div", null)
+          ]),
+          React.createElement("div", { className:"transform-grid" }, [
+            React.createElement("div", { className:"cell", key:"x" }, [
+              React.createElement("div", { className:"label" }, "X"),
+              React.createElement("input", {
+                type:"number",
+                step: stepByUnit[unit],
+                value: dispX,
+                onChange: onXChangeU
+              })
+            ]),
+            React.createElement("div", { className:"cell", key:"y" }, [
+              React.createElement("div", { className:"label" }, "Y"),
+              React.createElement("input", {
+                type:"number",
+                step: stepByUnit[unit],
+                value: dispY,
+                onChange: onYChangeU
+              })
+            ]),
+            React.createElement("div", { className:"cell", key:"w" }, [
+              React.createElement("div", { className:"label" }, "W"),
+              React.createElement("input", {
+                type:"number",
+                min: stepByUnit[unit],
+                step: stepByUnit[unit],
+                value: dispW,
+                onChange: onWChangeU
+              })
+            ]),
+            React.createElement("div", { className:"cell", key:"h" }, [
+              React.createElement("div", { className:"label" }, "H"),
+              React.createElement("input", {
+                type:"number",
+                min: stepByUnit[unit],
+                step: stepByUnit[unit],
+                value: dispH,
+                onChange: onHChangeU
+              })
+            ])
+          ]),
+          React.createElement("div", { className:"hint" }, `Scalare uniformă (păstrează proporțiile) • Unitate curentă: ${unit}`),
+
+          React.createElement("div", { className:"label", style:{marginTop:10} }, "Layere"),
+          React.createElement("div", { className:"controls-row" }, [
+            React.createElement("div", null, [
+              React.createElement("div", { className:"label" }, "Layer 1 (Top)"),
+              React.createElement("div", { className:"layer-row" }, [
+                React.createElement("input", { type:"color", value:cTop, onInput:e=>setCTop(e.target.value) }),
+                React.createElement("button", { className:"eye-btn", "aria-pressed": showTop, onClick: () => setShowTop(!showTop) }, EyeIcon(showTop))
+              ]),
+             React.createElement("div", { className:"label", style:{marginTop:6} }, "Grosime (Top)"),
+             React.createElement("input", {
+               type:"range", min:0, max:160,
+               value: toValueStr(padTop),
+               onChange: e => setPadTop(toNum(e.target.value, 0))
+             })
+            ]),
+            React.createElement("div", null, [
+              React.createElement("div", { className:"label" }, "Layer 2 (Mijloc)"),
+              React.createElement("div", { className:"layer-row" }, [
+                React.createElement("input", { type:"color", value:cMid, onInput:e=>setCMid(e.target.value) }),
+                React.createElement("button", { className:"eye-btn", "aria-pressed": showMid, onClick: () => setShowMid(!showMid) }, EyeIcon(showMid))
+              ]),
+              React.createElement("div", { className:"label", style:{marginTop:6} }, "Grosime (Mijloc)"),
+              React.createElement("input", {
+                type:"range", min:0, max:50, step:1,
+                value: padMid,
+                onChange: e => setPadMid(+e.target.value)
+              }),
+              React.createElement("button", {
+                onClick: () => (window.applyExpandMid ? window.applyExpandMid() : console.log("applyExpandMid placeholder")),
+                style: { marginTop: 4, padding: "2px 6px", fontSize: 12, cursor: "pointer" }
+              }, "Set")
+            ])
+          ]),
+          React.createElement("div", { className:"controls-row" }, [
+            React.createElement("div", null, [
+              React.createElement("div", { className:"label" }, "Layer 3 (Bază)"),
+              React.createElement("div", { className:"layer-row" }, [
+                React.createElement("input", { type:"color", value:cBase, onInput:e=>setCBase(e.target.value) }),
+                React.createElement("button", { className:"eye-btn", "aria-pressed": showBase, onClick: () => setShowBase(!showBase) }, EyeIcon(showBase))
+              ]),
+              React.createElement("div", { className:"label", style:{marginTop:6} }, "Grosime (Bază)"),
+              React.createElement("div", { className:"controls-row", style:{ gap:8, alignItems:"center" } }, [
+                React.createElement("input", {
+                  type:"range", min:1, max:200,
+                  value: toValueStr(padBase),
+                  onChange: e => setPadBase(toNum(e.target.value, 28))
+                }),
+                React.createElement("button", {
+                  onClick: () => (window.applyExpandBase ? window.applyExpandBase() : console.log("applyExpandBase placeholder")),
+                  style: { marginTop: 4, padding: "2px 6px", fontSize: 12, cursor: "pointer" }
+                }, "Set")
+              ])
+            ]),
+            React.createElement("div", null)
+          ]),
+
+          /* blocul de vizibilitate separat a fost înlocuit de iconițe lângă culori */
+
+          React.createElement("label", { style:{display:"flex", gap:8, alignItems:"center", marginTop:8} },
+            React.createElement("input", { type:"checkbox", checked:round, onChange:e=>setRound(e.target.checked) }),
+            React.createElement("span", null, "Rotunjit")
+          ),
+
+          React.createElement("div", { style:{marginTop:12, display:"grid", gap:"8px"} },
+            React.createElement("button", { className:"btn", onClick:downloadSVG, disabled: !paths || !paths.length }, "Descarcă SVG (toate layerele)"),
+            React.createElement("div", { className:"controls-row" },
+              React.createElement("button", { className:"btn", onClick:()=>downloadSingleLayer("top"), disabled: !paths || !paths.length }, "Descarcă Layer Top"),
+              React.createElement("button", { className:"btn", onClick:()=>downloadSingleLayer("mid"), disabled: !paths || !paths.length }, "Descarcă Layer Mid")
+            ),
+            React.createElement("div", { className:"controls-row" },
+              React.createElement("button", { className:"btn", onClick:()=>downloadSingleLayer("base"), disabled: !paths || !paths.length }, "Descarcă Layer Bază")
+            )
+          ),
+
+          React.createElement("div", { className:"hint" }, "Fonturile sunt citite din /assets/fonts/fonts.json (chei: id, label, file).")
+        ),
+
+        // CARD PREVIEW
+        React.createElement(
+          "div",
+          { className:"card" },
+          React.createElement(
+            "div",
+            { className:"grid" },
+            [
+              React.createElement(Preview, {
+                svgRef,
+                paths,
+                textBBox,
+                colors: previewColors,
+                padMid,
+                padBase,
+                padTop,
+                showTop,
+                showMid,
+                showBase,
+                rounded: round,
+                fontSizePx,
+                setFontSizePx,
+                lineData,
+                lineOffsets,
+                setLines,
+                zoom,
+                midExpanded,
+                midExpandedD,
+                baseExpanded,
+                baseExpandedD
+              }),
+              React.createElement("div", { className:"zoom-overlay" }, [
+                React.createElement("input", {
+                  key:"z1", type:"range", min:0.05, max:2, step:0.01,
+                  value: zoom,
+                  onChange: e => setZoom(clamp(parseFloat(e.target.value)||1, 0.05, 2))
+                }),
+                React.createElement("button", { key:"z2", className:"btn", type:"button", onClick: fitZoom }, "Fit"),
+                React.createElement("button", { key:"z3", className:"btn", type:"button", onClick: resetZoom }, "100%")
+              ])
+            ]
+          )
+        )
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("app")).render(React.createElement(App));
+    console.log("%cindex.html simplu – gata", "color:#16a34a");
+  </script>
+</html>

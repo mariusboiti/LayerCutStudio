@@ -1,0 +1,19 @@
+﻿[
+  { "id": "demo-regular",         "label": "Demo Font Regular",                          "file": "/assets/fonts/demo-regular.ttf" },
+  { "id": "adventure-regular",    "label": "Adventure Regular",                           "file": "/assets/fonts/adventure-regular.ttf" },
+  { "id": "adventure-hollow",     "label": "Adventure Hollow",                            "file": "/assets/fonts/adventure-hollow.ttf" },
+  { "id": "birds-of-paradise",    "label": "Birds of Paradise (PERSONAL USE ONLY)",       "file": "/assets/fonts/birds-of-paradise-personal-use-only.ttf" },
+  { "id": "comic-jungle",         "label": "Comic Jungle",                                "file": "/assets/fonts/comic-jungle.ttf" },
+  { "id": "cute-dino",            "label": "Cute Dino",                                   "file": "/assets/fonts/cute-dino.ttf" },
+  { "id": "free-royalty",         "label": "Free Royalty",                                "file": "/assets/fonts/free-royalty.ttf" },
+  { "id": "hello-valentina",      "label": "Hello Valentina",                             "file": "/assets/fonts/hello-valentina.ttf" },
+  { "id": "marilyn",              "label": "Marilyn",                                     "file": "/assets/fonts/marilyn.ttf" },
+  { "id": "playful-rocket",       "label": "Playful Rocket",                              "file": "/assets/fonts/playful-rocket.ttf" },
+  { "id": "ralisthen",            "label": "Ralisthen",                                   "file": "/assets/fonts/ralisthen.ttf" },
+  { "id": "street-drips",         "label": "Street Drips",                                "file": "/assets/fonts/street-drips.ttf" },
+  { "id": "super-malibu",         "label": "Super Malibu",                                "file": "/assets/fonts/super-malibu.ttf" },
+  { "id": "super-trend",          "label": "Super Trend",                                 "file": "/assets/fonts/super-trend.ttf" },
+  { "id": "sweety-rasty",         "label": "Sweety Rasty",                                "file": "/assets/fonts/sweety-rasty.ttf" },
+  { "id": "amazing-spider-man",   "label": "The Amazing Spider-Man",                      "file": "/assets/fonts/the-amazing-spider-man.ttf" },
+  { "id": "wizards-magic",        "label": "Wizards' Magic",                              "file": "/assets/fonts/wizards-magic.ttf" }
+]

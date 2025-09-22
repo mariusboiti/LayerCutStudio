@@ -1,0 +1,1008 @@
+﻿<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Text cu 3 layere (simplu)</title>
+
+  <!-- React 18 + OpenType -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/opentype.js@1.3.4/dist/opentype.min.js"></script>
+
+  <style>
+    :root { --ui: #e5e7eb; --grid: #eef2f7; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; background:#fafafa; }
+    .wrap { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
+    .row { display: grid; grid-template-columns: 360px 1fr; gap: 16px; align-items: start; }
+    .card { background: #fff; border:1px solid #e5e7eb; border-radius: 12px; padding: 16px; }
+
+    .label { font-size: 12px; color:#374151; margin-top: 8px; margin-bottom: 4px; }
+    input[type="number"], input[type="text"], select {
+      width: 100%; padding:8px 10px; border-radius:8px;
+      border:1px solid #d1d5db; background:#fff; outline:none;
+    }
+    input[type="color"]{ width:44px; height:28px; padding:0; border:1px solid #d1d5db; border-radius:8px; background:#fff;}
+    .controls-row { display: grid; grid-template-columns: 1fr 1fr; gap:8px; }
+
+    .grid {
+      width:100%; height:700px; border-radius:12px; border:1px solid var(--ui); background:#fff;
+      background-image:
+        linear-gradient(var(--grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+      background-size: 20px 20px, 20px 20px;
+      position: relative; overflow: hidden;
+    }
+
+    .btn {
+      display:inline-block; padding:10px 14px; border-radius:10px; border:1px solid #111827;
+      background:#111827; color:#fff; cursor:pointer; user-select:none; text-align:center;
+    }
+    .btn:disabled { opacity:.6; cursor:not-allowed; }
+    .hint { font-size:12px; color:#6b7280; margin-top:10px; }
+    /* overlay de eroare JS */
+    .error-overlay{
+      position:fixed; left:16px; bottom:16px;
+      background:#fee2e2; color:#991b1b;
+      padding:8px 10px; border-radius:8px; font-size:12px;
+      max-width:50vw; z-index:9999; box-shadow:0 6px 16px rgba(0,0,0,.15);
+      display:none;
+    }
+    /* HUD vizibil in frontend */
+    .hud {
+      position: fixed; right: 16px; bottom: 16px;
+      background:#111827; color:#fff; padding:10px 12px;
+      border-radius:10px; font-size:14px; box-shadow:0 6px 16px rgba(0,0,0,.15);
+      z-index:9999;
+    }
+    .svg-preview { display:block; width:100%; height:100%; }
+    .drag-cursor { cursor: move; }
+    .resize-handle {
+      r: 7;
+      fill: #111;
+      cursor: nwse-resize;
+    }
+    .noselect { user-select: none; -webkit-user-select: none; }
+    /* feedback minim pt randul selectat (optional) */
+    [data-selected="1"] { outline: 1px dashed #888; outline-offset: 2px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h2>Text cu 3 layere (simplu)</h2>
+    <div id="app" class="row"></div>
+  </div>
+  <div id="err" class="error-overlay"></div>
+
+  <!-- HUD vizibil ï¿½n col? pentru confirmare patch -->
+  <div id="hud" class="hud">HUD v1 instalat</div>
+
+  <script>
+    window.addEventListener('error', function (ev) {
+      console.log('[RUNTIME ERROR]', ev.message, 'at', ev.filename + ':' + ev.lineno + ':' + ev.colno);
+    });
+    // ... codul existent al aplicatiei (App, Preview, etc.)
+
+    /**
+     * DEV ONLY – Auto-key shim
+     * Atenuează warning-ul "Each child in a list should have a unique key"
+     * adăugând automat key={index} pentru array-urile randate ca children.
+     * Nu afectează producția; îl poți șterge după ce pui chei explicite.
+     */
+    (function enableAutoKeyShim(){
+      if (!window.React || !React.createElement) return;
+      const origCreateElement = React.createElement;
+      React.createElement = function(type, props, ...children) {
+        if (children.length === 1 && Array.isArray(children[0])) {
+          const arr = children[0].map((child, i) => {
+            // dacă e element React fără cheie, îi adăugăm key=index
+            return (React.isValidElement(child) && child.key == null)
+              ? React.cloneElement(child, { key: i })
+              : child;
+          });
+          return origCreateElement(type, props, arr);
+        }
+        return origCreateElement(type, props, ...children);
+      };
+      // marcare pentru debugging
+      window.__AUTO_KEY_SHIM__ = true;
+    })();
+
+    /* ===================================================================
+     * Safe numeric formatting (fara apel direct la Number.prototype.toFixed)
+     * -------------------------------------------------------------------
+     * - `toNum(v, fb)` coerÈ›eazÄƒ orice input (string, number, null) la numÄƒr.
+     * - `fixed(value, digits, fallback)` formateazÄƒ cu `digits` zecimale, dar
+     *    nu foloseÈ™te `n.toFixed(...)` â€” deci NU mai poate arunca:
+     *    "TypeError: e.toFixed is not a function".
+     * - expunem global `window.toNum` È™i **suprascriem** (intenÈ›ionat) `window.fixed`
+     *   ca sÄƒ forÈ›Äƒm folosirea implementÄƒrii sigure oriunde e apelatÄƒ Ã®n cod.
+     * =================================================================== */
+    (function () {
+      const toNum = (v, fb = 0) => {
+        if (typeof v === 'number') return Number.isFinite(v) ? v : fb;
+        if (v == null || v === '') return fb;
+        const n = parseFloat(String(v).replace(',', '.'));
+        return Number.isFinite(n) ? n : fb;
+      };
+      const toValueStr = (v) => {
+        const n = toNum(v, null);
+        return n === null ? '' : String(n);
+      };
+      function formatFixed(value, digits, fallback) {
+        var d = (typeof digits === 'number' && digits >= 0) ? digits : 2;
+        var n = toNum(value, NaN);
+        if (!Number.isFinite(n)) {
+          // construim fallback-ul cu exact d zecimale, ex: 0.00
+          var base = '0';
+          if (d > 0) base += '.' + '0'.repeat(d);
+          return (fallback != null) ? String(fallback) : base;
+        }
+        var p = Math.pow(10, d);
+        var rounded = Math.round(n * p) / p;   // rotunjire fara .toFixed()
+        var s = String(rounded);
+        if (d > 0) {
+          var i = s.indexOf('.');
+          if (i === -1) s += '.' + '0'.repeat(d);
+          else {
+            var dec = s.length - i - 1;
+            if (dec < d) s += '0'.repeat(d - dec);
+          }
+        }
+        return s;
+      }
+      // expunem global; suprascriem orice helper anterior "fixed"
+      window.toNum = toNum;
+      window.fixed = formatFixed;
+    })();
+
+    const { useEffect, useMemo, useRef, useState } = React;
+    // Debug overlay: prinde erorile JS ca sa le vezi ï¿½n pagina
+    (function(){
+      const el = () => document.getElementById('err');
+      const show = (msg) => { const e = el(); if(!e) return; e.style.display='block'; e.textContent = String(msg); };
+      window.addEventListener('error', (ev) => show(ev.message));
+      window.addEventListener('unhandledrejection', (ev) => {
+        const r = ev.reason; show((r && r.message) ? r.message : r);
+      });
+    })();
+
+    // helper HUD global
+    window.__setHUD = (t) => { const el = document.getElementById('hud'); if (el) el.textContent = t; };
+    const DESIGN_W = 1200, DESIGN_H = 700;
+
+    // utilitare
+    const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+    // fonts.json -> [{id, label, file}]
+    function loadFontsList() {
+      console.log("Loading fonts.json...");
+      return fetch("/assets/fonts/fonts.json", { cache: "no-store" })
+        .then(r => {
+          console.log("fonts.json response status:", r.status);
+          if (!r.ok) throw new Error("fonts.json not found");
+          return r.json();
+        })
+        .then(list => {
+          console.log("Loaded fonts list:", list.length, "fonts");
+          return Array.isArray(list) ? list.filter(f => f && (f.id || f.file) && f.file) : [];
+        });
+    }
+    async function loadFontFile(url) {
+      console.log("Loading font file:", url);
+      const r = await fetch(url, { cache: "no-store" });
+      console.log("Font fetch status:", r.status, "for", url);
+      if (!r.ok) throw new Error("TTF fetch failed: " + url);
+      const buf = await r.arrayBuffer();
+      console.log("Font buffer size:", buf.byteLength, "for", url);
+      try {
+        const font = opentype.parse(buf);
+        console.log("Font parsed successfully:", font.names.fontFamily?.en || "Unknown");
+        return font;
+      } catch (e) {
+        console.error("OpenType parse error for", url, e);
+        throw e;
+      }
+    }
+
+    // genereaza path d din text (un rï¿½nd)
+    function makePathFromText(font, text, fontSize, x, y, letterSpacing=0, glyphsOverride=null) {
+      if (!font || !text) return { d: "", bbox: null };
+      const glyphs = glyphsOverride || font.stringToGlyphs(text);
+      if (!glyphs.length) return { d: "", bbox: null };
+      const scale = fontSize / font.unitsPerEm;
+      let cx = x, d = "";
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (let i=0; i<glyphs.length; i++) {
+        const g = glyphs[i], prev = i ? glyphs[i-1] : null;
+        if (prev) cx += font.getKerningValue(prev, g) * scale;
+        const p = g.getPath(cx, y, fontSize);
+        d += p.toPathData(3) + " ";
+        const box = p.getBoundingBox();
+        if (Number.isFinite(box.x1) && Number.isFinite(box.x2) && Number.isFinite(box.y1) && Number.isFinite(box.y2)) {
+          if (box.x1 < minX) minX = box.x1;
+          if (box.y1 < minY) minY = box.y1;
+          if (box.x2 > maxX) maxX = box.x2;
+          if (box.y2 > maxY) maxY = box.y2;
+        }
+        cx += (g.advanceWidth || font.unitsPerEm) * scale;
+        if (i < glyphs.length - 1) cx += letterSpacing;
+      }
+      const hasBox = Number.isFinite(minX) && Number.isFinite(minY) && Number.isFinite(maxX) && Number.isFinite(maxY);
+      return { d: d.trim(), bbox: hasBox ? { minX, minY, maxX, maxY } : null };
+    }
+
+    function Preview({
+      svgRef,
+      paths,
+      textBBox,
+      colors,
+      pad,
+      rounded,
+      fontSizePx,
+      setFontSizePx,
+      lineData,
+      lineOffsets
+    }) {
+      const dragRef   = useRef({ active: false, index: -1, sx: 0, sy: 0, ox: 0, oy: 0 });
+      const scaleRef  = useRef({ active: false, cx: 0, cy: 0, startDist: 1, startSize: fontSizePx });
+      const anchorRef = useRef({ active: false, cx: 0, cy: 0 });
+      const wheelTimerRef = useRef(null);
+
+      const clientToSVG = React.useCallback((evt) => {
+        const svg = svgRef?.current || null;
+        if (!svg) return { x: 0, y: 0 };
+        const pt = svg.createSVGPoint();
+        pt.x = evt.clientX; pt.y = evt.clientY;
+        const m = svg.getScreenCTM(); if (!m) return { x: 0, y: 0 };
+        const inv = m.inverse(); const p = inv ? pt.matrixTransform(inv) : pt;
+        return { x: p.x, y: p.y };
+      }, [svgRef]);
+
+      const onMove = React.useCallback((evt) => {
+        if (!dragRef.current.active) return;
+        evt.preventDefault();
+        const { x, y } = clientToSVG(evt);
+        const dx = Math.round(x - dragRef.current.sx);
+        const dy = Math.round(y - dragRef.current.sy);
+        const target = lineOffsets?.[dragRef.current.index];
+        if (!target) return;
+        if (target.setX) target.setX(dragRef.current.ox + dx);
+        if (target.setY) target.setY(dragRef.current.oy + dy);
+      }, [clientToSVG, lineOffsets]);
+
+      const onUp = React.useCallback(() => {
+        if (!dragRef.current.active) return;
+        dragRef.current.active = false;
+        dragRef.current.index = -1;
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+      }, [onMove]);
+
+      const beginDrag = React.useCallback((evt, idx) => {
+        const target = lineOffsets?.[idx];
+        if (!target) return;
+        evt.preventDefault();
+        const { x, y } = clientToSVG(evt);
+        dragRef.current = {
+          active: true,
+          index: idx,
+          sx: x,
+          sy: y,
+          ox: target.x || 0,
+          oy: target.y || 0
+        };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp, { once: true });
+      }, [clientToSVG, lineOffsets, onMove, onUp]);
+
+      const centerFromBBox = (bb) => bb ? {
+        cx: (bb.minX + bb.maxX) / 2,
+        cy: (bb.minY + bb.maxY) / 2
+      } : null;
+
+      const scaleCenter = useMemo(() => centerFromBBox(textBBox), [textBBox]);
+
+      const onScaleMove = React.useCallback((evt) => {
+        if (!scaleRef.current.active) return;
+        evt.preventDefault();
+        const { x, y } = clientToSVG(evt);
+        const distance = Math.hypot(x - scaleRef.current.cx, y - scaleRef.current.cy) || 1;
+        let ratio = distance / scaleRef.current.startDist;
+        if (evt.shiftKey) ratio = 1 + (ratio - 1) * 0.35;
+        let next = scaleRef.current.startSize * ratio;
+        next = Math.max(20, Math.min(800, next));
+        setFontSizePx(Math.round(next));
+      }, [clientToSVG, setFontSizePx]);
+
+      const onScaleUp = React.useCallback(() => {
+        if (!scaleRef.current.active) return;
+        scaleRef.current.active = false;
+        window.removeEventListener('mousemove', onScaleMove);
+        window.removeEventListener('mouseup', onScaleUp);
+        anchorRef.current.active = false;
+      }, [onScaleMove]);
+
+      const onScaleDown = React.useCallback((evt) => {
+        if (!textBBox || !scaleCenter) return;
+        evt.preventDefault(); evt.stopPropagation();
+        const { x, y } = clientToSVG(evt);
+        const dist = Math.hypot(x - scaleCenter.cx, y - scaleCenter.cy) || 1;
+        scaleRef.current = {
+          active: true, cx: scaleCenter.cx, cy: scaleCenter.cy,
+          startDist: dist, startSize: fontSizePx
+        };
+        anchorRef.current = { active: true, cx: scaleCenter.cx, cy: scaleCenter.cy };
+        window.addEventListener('mousemove', onScaleMove);
+        window.addEventListener('mouseup', onScaleUp, { once: true });
+      }, [clientToSVG, fontSizePx, onScaleMove, onScaleUp, scaleCenter, textBBox]);
+
+      useEffect(() => {
+        const svg = svgRef.current;
+        if (!svg) return;
+        const onWheel = (e) => {
+          if (!e.ctrlKey || !textBBox) return;
+          e.preventDefault();
+          const c = centerFromBBox(textBBox);
+          if (!anchorRef.current.active && c) anchorRef.current = { active: true, cx: c.cx, cy: c.cy };
+          const zoomIn = e.deltaY < 0;
+          const base = zoomIn ? 1.12 : (1 / 1.12);
+          const factor = e.shiftKey ? (1 + (base - 1) * 0.35) : base;
+          let next = fontSizePx * factor;
+          next = Math.max(20, Math.min(800, next));
+          setFontSizePx(Math.round(next));
+          if (wheelTimerRef.current) clearTimeout(wheelTimerRef.current);
+          wheelTimerRef.current = setTimeout(() => { anchorRef.current.active = false; }, 200);
+        };
+        svg.addEventListener('wheel', onWheel, { passive: false });
+        return () => {
+          svg.removeEventListener('wheel', onWheel);
+          if (wheelTimerRef.current) clearTimeout(wheelTimerRef.current);
+        };
+      }, [fontSizePx, textBBox, setFontSizePx]);
+
+      useEffect(() => {
+        if (!anchorRef.current.active || !textBBox || !lineOffsets?.length) return;
+        const c = centerFromBBox(textBBox);
+        if (!c) return;
+        const dx = anchorRef.current.cx - c.cx;
+        const dy = anchorRef.current.cy - c.cy;
+        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+          lineOffsets.forEach((item) => {
+            if (item?.setX) item.setX((v) => v + dx);
+            if (item?.setY) item.setY((v) => v + dy);
+          });
+        }
+      }, [textBBox, lineOffsets]);
+
+      useEffect(() => () => {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        window.removeEventListener('mousemove', onScaleMove);
+        window.removeEventListener('mouseup', onScaleUp);
+      }, [onMove, onScaleMove, onScaleUp, onUp]);
+
+      const lineJoin = rounded ? "round" : "miter";
+      const midStroke  = Math.max(8,  Math.round(pad * 0.55));
+      const baseStroke = Math.max(12, pad);
+      const { base = "#111827", mid = "#ef4444", top = "#ffffff" } = colors || {};
+      const showHandle = Boolean(paths && paths.length && textBBox);
+
+      return React.createElement("svg", {
+        ref: svgRef, xmlns: "http://www.w3.org/2000/svg",
+        width: "100%", height: "100%",
+        viewBox: `0 0 ${DESIGN_W} ${DESIGN_H}`,
+        preserveAspectRatio: "xMidYMid meet",
+        className: "svg-preview",
+        onMouseLeave: onUp
+      }, [
+        React.createElement("line", { key: "cx", x1: DESIGN_W/2, y1: 0, x2: DESIGN_W/2, y2: DESIGN_H, stroke: "#cbd5e1", "strokeWidth": 1 }),
+        React.createElement("line", { key: "cy", x1: 0, y1: DESIGN_H/2, x2: DESIGN_W, y2: DESIGN_H/2, stroke: "#cbd5e1", "strokeWidth": 1 }),
+
+        ...(paths || []).map((d, i) => React.createElement("path", {
+          key: `base-${i}`, d, fill: "none", stroke: base,
+          "strokeWidth": baseStroke, "strokeLinejoin": lineJoin, "strokeLinecap": rounded ? "round" : "butt"
+        })),
+
+        ...(paths || []).map((d, i) => React.createElement("path", {
+          key: `mid-${i}`, d, fill: "none", stroke: mid,
+          "strokeWidth": midStroke, "strokeLinejoin": lineJoin, "strokeLinecap": rounded ? "round" : "butt"
+        })),
+
+        ...(paths || []).map((d, i) => React.createElement("path", { key: `top-${i}`, d, fill: top })),
+
+        ...(lineData || []).map((line) => React.createElement("path", {
+          key: `drag-${line.index}`,
+          d: line.d,
+          fill: "transparent",
+          stroke: "transparent",
+          "strokeWidth": 20,
+          style: { cursor: "move" },
+          onMouseDown: (evt) => beginDrag(evt, line.index)
+        })),
+
+        showHandle ? React.createElement("circle", {
+          key: "scale", cx: textBBox.maxX, cy: textBBox.maxY, r: 14,
+          fill: base, stroke: "#ffffff", "strokeWidth": 2,
+          style: { cursor: "nwse-resize" }, onMouseDown: onScaleDown
+        }) : null
+      ]);
+    }
+
+    /**
+     * Delegare globala: drag + scale + nudge fara a modifica JSX-ul randurilor.
+     * Ipoteze soft:
+     *  - Fiecare rand are un element wrapper (ex. <g>) cu un identificator stabil:
+     *      * ideal: data-line-id="line1|line2|line3"
+     *      * fallback: id="line1|line2|line3"  (vom seta noi data-line-id la mount)
+     *  - Handle-ul de scale are clasa .resize-handle (daca nu, il tratam ca drag).
+     */
+    function useDelegatedDragScaleNudge({ fontSizePx, setFontSizePx, selectedLineId, setSelectedLineId, setLines, getLineRect }) {
+      const modeRef = React.useRef(null); // 'drag' | 'scale' | null
+      const startRef = React.useRef({ x:0, y:0 });
+      const startFontRef = React.useRef(0);
+      const pointerIdRef = React.useRef(null);
+      const centerRef = React.useRef({ x:0, y:0 });
+      const activeLineRef = React.useRef(null); // id-ul randului in timpul gestului
+
+      // --- helper: gaseste id-ul de rand dintr-un target ---
+      function findLineIdFromTarget(target) {
+        if (!target) return null;
+        const el = target.closest ? target.closest('[data-line-id], #line1, #line2, #line3') : null;
+        if (!el) return null;
+        const idAttr = el.getAttribute && el.getAttribute('data-line-id');
+        if (idAttr) return idAttr;
+        const hardId = el.id;
+        if (hardId === 'line1' || hardId === 'line2' || hardId === 'line3') return hardId;
+        return null;
+      }
+
+      // --- selectie vizuala (optional) ---
+      React.useEffect(() => {
+        // normalizeaza atributele data-line-id daca lipsesc, pe id-urile clasice
+        ['line1','line2','line3'].forEach(k => {
+          const el = document.getElementById(k);
+          if (el && !el.getAttribute('data-line-id')) {
+            try { el.setAttribute('data-line-id', k); } catch {}
+          }
+        });
+        // marcheaza selected
+        const all = document.querySelectorAll('[data-line-id]');
+        all.forEach(n => n.setAttribute('data-selected', n.getAttribute('data-line-id') === selectedLineId ? '1' : '0'));
+      }, [selectedLineId]);
+
+      // --- key nudge ---
+      React.useEffect(() => {
+        function isEditable(el){
+          if (!el) return false;
+          const t = (el.tagName||'').toLowerCase();
+          if (t==='input'||t==='textarea'||el.isContentEditable) return true;
+          const role = el.getAttribute && el.getAttribute('role');
+          return !!(role && /textbox|spinbutton/i.test(role));
+        }
+        function onKeyDown(e){
+          if (isEditable(e.target)) return;
+          if (!selectedLineId) return;
+          let dx=0, dy=0;
+          const step = e.shiftKey ? 10 : 1;
+          switch(e.key){
+            case 'ArrowUp': dy=-step; break;
+            case 'ArrowDown': dy=step; break;
+            case 'ArrowLeft': dx=-step; break;
+            case 'ArrowRight': dx=step; break;
+            default: return;
+          }
+          e.preventDefault();
+          if (typeof setLines !== 'function') { console.warn('setLines lipseste; nudge ignorat.'); return; }
+          setLines(prev => {
+            if (Array.isArray(prev)) {
+              return prev.map(l => l.id===selectedLineId ? { ...l, x:(l.x||0)+dx, y:(l.y||0)+dy } : l);
+            } else if (prev && typeof prev==='object') {
+              const cur = prev[selectedLineId] || {};
+              return { ...prev, [selectedLineId]: { ...cur, x:(cur.x||0)+dx, y:(cur.y||0)+dy } };
+            }
+            return prev;
+          });
+        }
+        window.addEventListener('keydown', onKeyDown, { passive:false });
+        return () => window.removeEventListener('keydown', onKeyDown, { passive:false });
+      }, [selectedLineId, setLines]);
+
+      // --- delegated pointerdown/move/up ---
+      React.useEffect(() => {
+        function onPointerDown(e){
+          const lineId = findLineIdFromTarget(e.target);
+          if (!lineId) return; // click in afara liniilor
+          // seteaza selectia daca s-a schimbat
+          if (lineId !== selectedLineId) setSelectedLineId(lineId);
+          // decide mod: scale daca tinta e un handle; altfel drag
+          const isScaleHandle = e.target && (e.target.classList && e.target.classList.contains('resize-handle'));
+          modeRef.current = isScaleHandle ? 'scale' : 'drag';
+          pointerIdRef.current = e.pointerId ?? 0;
+          activeLineRef.current = lineId;
+          startRef.current.x = e.clientX;
+          startRef.current.y = e.clientY;
+          if (modeRef.current==='scale') {
+            startFontRef.current = fontSizePx || 120;
+            const r = (typeof getLineRect==='function') ? getLineRect(lineId) : null;
+            if (r) centerRef.current = { x:r.x + r.width/2, y:r.y + r.height/2 };
+            else centerRef.current = { x:e.clientX, y:e.clientY };
+          }
+          e.preventDefault();
+        }
+        function onPointerMove(e){
+          if (!modeRef.current || pointerIdRef.current===null) return;
+          const lineId = activeLineRef.current;
+          if (!lineId) return;
+          const dx = e.clientX - startRef.current.x;
+          const dy = e.clientY - startRef.current.y;
+          if (modeRef.current==='drag') {
+            if (typeof setLines !== 'function') return;
+            e.preventDefault();
+            setLines(prev => {
+              if (Array.isArray(prev)) {
+                return prev.map(l => l.id===lineId ? { ...l, x:(l.x||0)+dx, y:(l.y||0)+dy } : l);
+              } else if (prev && typeof prev==='object') {
+                const cur = prev[lineId] || {};
+                return { ...prev, [lineId]: { ...cur, x:(cur.x||0)+dx, y:(cur.y||0)+dy } };
+              }
+              return prev;
+            });
+            startRef.current.x = e.clientX;
+            startRef.current.y = e.clientY;
+          } else if (modeRef.current==='scale') {
+            e.preventDefault();
+            // Scale ADITIV stabil: fontSize += k * (dx + dy)
+            // Shift => sensibilitate mai mare.
+            const sens = e.shiftKey ? 1.8 : 0.9;   // px per pixel de drag diagonal
+            const base = startFontRef.current || 120;
+            const next = clamp(Math.round(base + (dx + dy) * sens), 8, 2000);
+            if (typeof setFontSizePx === 'function') setFontSizePx(next);
+          }
+        }
+        function onPointerUp(){
+          modeRef.current = null;
+          pointerIdRef.current = null;
+          activeLineRef.current = null;
+        }
+        document.addEventListener('pointerdown', onPointerDown, { passive:false });
+        document.addEventListener('pointermove', onPointerMove, { passive:false });
+        document.addEventListener('pointerup', onPointerUp, { passive:true });
+        document.addEventListener('pointercancel', onPointerUp, { passive:true });
+        return () => {
+          document.removeEventListener('pointerdown', onPointerDown);
+          document.removeEventListener('pointermove', onPointerMove);
+          document.removeEventListener('pointerup', onPointerUp);
+          document.removeEventListener('pointercancel', onPointerUp);
+        };
+      }, [fontSizePx, setFontSizePx, selectedLineId, setSelectedLineId, setLines, getLineRect]);
+    }
+
+
+    function App(){
+      // ï¿½ï¿½ï¿½ STATE (sus de tot) ï¿½ï¿½ï¿½
+      const [fontSizePx, setFontSizePx] = useState(140);
+      // NEW: linia selectata pentru drag/nudge/scale
+      const [selectedLineId, setSelectedLineId] = React.useState('line1');
+      // Exemplu posibile stari (doar ca referinta ï¿½ nu iti suprascriu starea reala):
+      const [lines, setLines] = React.useState({
+        line1: { x: 0, y: 0 }, line2: { x: 0, y: 0 }, line3: { x: 0, y: 0 }
+      });
+
+      // fonts
+      const [fonts, setFonts] = useState([]);
+      const [fontId, setFontId] = useState("");
+      const [font, setFont] = useState(null);
+      const [loadMsg, setLoadMsg] = useState("");
+
+      // text (pï¿½na la 3 rï¿½nduri)
+      const [text, setText]   = useState("Blake");
+      const [text2, setText2] = useState("");
+      const [text3, setText3] = useState("");
+
+      // layout
+
+      const [lineSpacing, setLineSpacing] = useState(0.95);
+      const [letterSpacing, setLetterSpacing] = useState(0);
+
+      // colors & look
+      const [cTop, setCTop]   = useState("#ffffff");
+      const [cMid, setCMid]   = useState("#ef4444");
+      const [cBase, setCBase] = useState("#111827");
+      const [pad, setPad]     = useState(28);
+      const [round, setRound] = useState(true);
+
+      // === Helper pentru bounding box-ul randului selectat (pt scale centrata) ===
+      // Daca deja ai o functie similara, o poti conecta in hook-ul de mai sus.
+      const getLineRect = React.useCallback((lineId) => {
+        // Cauta elementul SVG al randului dupa un id/data-attr. Adapteaza dupa markup-ul tau.
+        const el = document.querySelector(`[data-line-id="${lineId}"]`) || document.getElementById(lineId);
+        if (el && el.getBBox) {
+          try {
+            const b = el.getBBox();
+            // b.x/y sunt in coordonate SVG; pentru clientX/Y folosesti transformarea curenta
+            // Pentru scopul nostru (raport intre distante), b.x/y sunt OK.
+            return { x: b.x, y: b.y, width: b.width, height: b.height };
+          } catch {}
+        }
+        return null;
+      }, []);
+
+      // === Activeaza DRAG + SCALE + NUDGE prin delegare (fara modificari in JSX) ===
+      useDelegatedDragScaleNudge({
+        fontSizePx, setFontSizePx,
+        selectedLineId, setSelectedLineId,
+        setLines, getLineRect
+      });
+      
+      
+      // ï¿½ï¿½ï¿½ HELPERS (fara default param = fontSizePx) ï¿½ï¿½ï¿½
+      const toPx = (v) => (v ?? fontSizePx);
+      const computePadding = (p) => (p ?? fontSizePx * 0.1);
+
+      // ï¿½ï¿½ï¿½ DERIVATE / MEMO ï¿½ï¿½ï¿½
+      const scale = useMemo(() => fontSizePx / 100, [fontSizePx]);
+
+      // HUD: arata fontul curent, marimea ?i numarul de rï¿½nduri
+      const hudFontLabel = useMemo(() => {
+        const it = fonts.find(f => (f.id ?? f.file) === fontId);
+        return it?.label || it?.id || it?.file || "(fara font)";
+      }, [fonts, fontId]);
+      useEffect(() => {
+        const linesCount = [text, text2, text3].filter(Boolean).length;
+        if (window.__setHUD) window.__setHUD(`??? Font: ${hudFontLabel} ï¿½ Size: ${fontSizePx}px ï¿½ Linii: ${linesCount}`);
+      }, [hudFontLabel, fontSizePx, text, text2, text3]);
+
+
+     // load fonts list
+      useEffect(() => {
+        (async () => {
+          try {
+            const list = await loadFontsList();
+            setFonts(list);
+            if (list.length) setFontId(list[0].id ?? list[0].file);
+          } catch (e) {
+            setLoadMsg("Nu pot ï¿½ncarca fonts.json ("+e.message+")");
+          }
+        })();
+      }, []);
+
+      // load selected font
+      useEffect(() => {
+        let stop = false;
+        (async () => {
+          const it = fonts.find(f => (f.id ?? f.file) === fontId);
+          if (!it) { setFont(null); return; }
+          try {
+            setLoadMsg("Se ï¿½ncarca fontul...");
+            const f = await loadFontFile(it.file);
+            if (!stop) { setFont(f); setLoadMsg(""); }
+          } catch (e) {
+            if (!stop) { setFont(null); setLoadMsg("Eroare font: " + e.message); }
+          }
+        })();
+        return () => { stop = true; };
+      }, [fontId, fonts]);
+
+      // genereaza path-urile pentru pï¿½na la 3 rï¿½nduri, centrate pe orizontala
+      const layout = useMemo(() => {
+        if (!font) return { paths: [], bbox: null, lines: [] };
+        const rawLines = [text, text2, text3].filter(Boolean);
+        if (!rawLines.length) return { paths: [], bbox: null, lines: [] };
+
+        const spacing = Number.isFinite(lineSpacing) && lineSpacing > 0 ? lineSpacing : 1;
+        const totalHeight = fontSizePx + (rawLines.length - 1) * fontSizePx * spacing;
+        const baselineTop = DESIGN_H / 2 - totalHeight / 2;
+
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        const perLine = [];
+        const offsets = [
+          lines.line1 || { x: 0, y: 0 },
+          lines.line2 || { x: 0, y: 0 },
+          lines.line3 || { x: 0, y: 0 }
+        ];
+
+        for (let idx = 0; idx < rawLines.length; idx++) {
+          const value = rawLines[idx];
+          const glyphs = font.stringToGlyphs(value);
+          if (!glyphs.length) continue;
+
+          const scale = fontSizePx / font.unitsPerEm;
+          let width = 0, prev = null;
+          for (let i = 0; i < glyphs.length; i++) {
+            const g = glyphs[i];
+            if (prev) width += font.getKerningValue(prev, g) * scale;
+            width += (g.advanceWidth || font.unitsPerEm) * scale;
+            if (i < glyphs.length - 1) width += letterSpacing;
+            prev = g;
+          }
+
+          const baseLine = baselineTop + fontSizePx + idx * fontSizePx * spacing;
+          const off = offsets[idx] || { x: 0, y: 0 };
+          const y = Math.round(baseLine) + off.y;
+          const x = DESIGN_W / 2 - width / 2 + off.x;
+
+          const { d, bbox } = makePathFromText(font, value, fontSizePx, x, y, letterSpacing, glyphs);
+          if (!d) continue;
+
+          perLine.push({ d, bbox, index: idx });
+
+          if (bbox) {
+            if (bbox.minX < minX) minX = bbox.minX;
+            if (bbox.minY < minY) minY = bbox.minY;
+            if (bbox.maxX > maxX) maxX = bbox.maxX;
+            if (bbox.maxY > maxY) maxY = bbox.maxY;
+          }
+        }
+
+        const hasBox = Number.isFinite(minX) && Number.isFinite(minY) && Number.isFinite(maxX) && Number.isFinite(maxY);
+        const paths = perLine.map(line => line.d);
+        return { paths, bbox: hasBox ? { minX, minY, maxX, maxY } : null, lines: perLine };
+      }, [font, text, text2, text3, fontSizePx, lines, lineSpacing, letterSpacing]);
+
+      const { paths, bbox: textBBox, lines: lineData } = layout;
+
+      const svgRef = useRef(null);
+      const previewColors = useMemo(() => ({ top: cTop, mid: cMid, base: cBase }), [cTop, cMid, cBase]);
+
+      const lineOffsets = useMemo(() => ([
+        { x: lines.line1?.x || 0, y: lines.line1?.y || 0, setX: (v) => setLines(prev => ({ ...prev, line1: { ...prev.line1 || {}, x: v } })), setY: (v) => setLines(prev => ({ ...prev, line1: { ...prev.line1 || {}, y: v } })) },
+        { x: lines.line2?.x || 0, y: lines.line2?.y || 0, setX: (v) => setLines(prev => ({ ...prev, line2: { ...prev.line2 || {}, x: v } })), setY: (v) => setLines(prev => ({ ...prev, line2: { ...prev.line2 || {}, y: v } })) },
+        { x: lines.line3?.x || 0, y: lines.line3?.y || 0, setX: (v) => setLines(prev => ({ ...prev, line3: { ...prev.line3 || {}, x: v } })), setY: (v) => setLines(prev => ({ ...prev, line3: { ...prev.line3 || {}, y: v } })) }
+      ]), [lines, setLines]);
+
+      function downloadSVG(){
+        const svg = svgRef.current;
+        if (!svg) return;
+        const xml = new XMLSerializer().serializeToString(svg);
+        const blob = new Blob([xml], { type: "image/svg+xml" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "text-3layers.svg";
+        a.click();
+        URL.revokeObjectURL(a.href);
+      }
+
+      function downloadSingleLayer(layerKey){
+        if (!paths || !paths.length) return;
+        const lineJoin = round ? "round" : "miter";
+        const lineCap = round ? "round" : "butt";
+        const midStroke = Math.max(8, Math.round(pad * 0.55));
+        const baseStroke = Math.max(12, pad);
+
+        let layerSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${DESIGN_W} ${DESIGN_H}" width="${DESIGN_W}" height="${DESIGN_H}">`;
+        paths.forEach(d => {
+          if (layerKey === "top") {
+            layerSVG += `<path d="${d}" fill="${cTop}"/>`;
+          } else if (layerKey === "mid") {
+            layerSVG += `<path d="${d}" fill="none" stroke="${cMid}" strokeWidth="${midStroke}" strokeLinejoin="${lineJoin}" strokeLinecap="${lineCap}"/>`;
+          } else if (layerKey === "base") {
+            layerSVG += `<path d="${d}" fill="none" stroke="${cBase}" strokeWidth="${baseStroke}" strokeLinejoin="${lineJoin}" strokeLinecap="${lineCap}"/>`;
+          }
+        });
+        layerSVG += `</svg>`;
+
+        const blob = new Blob([layerSVG], { type: "image/svg+xml" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `text-3layers-${layerKey}.svg`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      }
+
+      // === Activeaza drag & scale fluent ===
+
+      // ï¿½ï¿½ï¿½ RESTUL codului (drag/scale/preview/export) ï¿½ï¿½ï¿½
+      return React.createElement(React.Fragment, null,
+        React.createElement("div", { className:"card" }, [
+          React.createElement("div", { className:"label" }, "Font"),
+          React.createElement("select", { value: fontId, onChange: e=>setFontId(e.target.value) },
+            fonts.map(f => React.createElement("option", { key:(f.id ?? f.file), value:(f.id ?? f.file) }, f.label || f.id || f.file))
+          ),
+          loadMsg ? React.createElement("div", { className:"hint" }, loadMsg) : null,
+
+          React.createElement("div", { className:"label" }, "Text (rï¿½nd 1)"),
+          React.createElement("input", { type:"text", value:text, onInput:e=>setText(e.target.value) }),
+
+          React.createElement("div", { className:"label", style:{marginTop:10} }, "Text 2 (op?ional)"),
+          React.createElement("input", { type:"text", value:text2, onInput:e=>setText2(e.target.value) }),
+
+          React.createElement("div", { className:"label", style:{marginTop:10} }, "Text 3 (op?ional)"),
+          React.createElement("input", { type:"text", value:text3, onInput:e=>setText3(e.target.value) }),
+
+          React.createElement("div", { className:"label", style:{marginTop:10} }, "Spa?iere rï¿½nduri"),
+          React.createElement("input", {
+            type:"number", step:"0.05", min:"0.4", max:"3",
+            value: toValueStr(lineSpacing),
+            onChange: e => {
+              const v = toNum(e.target.value, 0.95);
+              setLineSpacing(v > 0 ? Math.min(3, Math.max(0.4, v)) : 0.95);
+            }
+          }),
+
+          React.createElement("div", { className:"label", style:{marginTop:10} }, "Font size"),
+          React.createElement("input", { type:"number", value:toValueStr(fontSizePx), min:10, max:800, onChange:e=>setFontSizePx(toNum(e.target.value, 140)) }),
+
+          React.createElement("div", { className:"label", style:{marginTop:10} }, "Spa?iere litere"),
+          React.createElement("input", {
+            type:"number",
+            step:"0.5",
+            min:"-10",
+            max:"100",
+            value: toValueStr(letterSpacing),
+            onChange: e => {
+              const v = toNum(e.target.value, 0);
+              setLetterSpacing(Math.max(-10, Math.min(100, v)));
+            }
+          }),
+
+          React.createElement("div", { className:"label", style:{marginTop:10} }, "Offset Rï¿½nd 1"),
+          React.createElement("div", { className:"controls-row" }, [
+            React.createElement("div", null, [
+              React.createElement("div", { className:"label" }, "X"),
+              React.createElement("input", { type:"number", value: toValueStr(lines.line1?.x), onChange:e=> setLines(prev => ({ ...prev, line1: { ...prev.line1 || {}, x: toNum(e.target.value, 0) } })) })
+            ]),
+            React.createElement("div", null, [
+              React.createElement("div", { className:"label" }, "Y"),
+              React.createElement("input", { type:"number", value: toValueStr(lines.line1?.y), onChange:e=> setLines(prev => ({ ...prev, line1: { ...prev.line1 || {}, y: toNum(e.target.value, 0) } })) })
+            ])
+          ]),
+
+          React.createElement("div", { className:"label", style:{marginTop:10} }, "Offset Rï¿½nd 2"),
+          React.createElement("div", { className:"controls-row" }, [
+            React.createElement("div", null, [
+              React.createElement("div", { className:"label" }, "X"),
+              React.createElement("input", { type:"number", value: toValueStr(lines.line2?.x), onChange:e=> setLines(prev => ({ ...prev, line2: { ...prev.line2 || {}, x: toNum(e.target.value, 0) } })), disabled: !text2 })
+            ]),
+            React.createElement("div", null, [
+              React.createElement("div", { className:"label" }, "Y"),
+              React.createElement("input", { type:"number", value: toValueStr(lines.line2?.y), onChange:e=> setLines(prev => ({ ...prev, line2: { ...prev.line2 || {}, y: toNum(e.target.value, 0) } })), disabled: !text2 })
+            ])
+          ]),
+
+          React.createElement("div", { className:"label", style:{marginTop:10} }, "Offset Rï¿½nd 3"),
+          React.createElement("div", { className:"controls-row" }, [
+            React.createElement("div", null, [
+              React.createElement("div", { className:"label" }, "X"),
+              React.createElement("input", { type:"number", value: toValueStr(lines.line3?.x), onChange:e=> setLines(prev => ({ ...prev, line3: { ...prev.line3 || {}, x: toNum(e.target.value, 0) } })), disabled: !text3 })
+            ]),
+            React.createElement("div", null, [
+              React.createElement("div", { className:"label" }, "Y"),
+              React.createElement("input", { type:"number", value: toValueStr(lines.line3?.y), onChange:e=> setLines(prev => ({ ...prev, line3: { ...prev.line3 || {}, y: toNum(e.target.value, 0) } })), disabled: !text3 })
+            ])
+          ]),
+
+          React.createElement("div", { className:"label", style:{marginTop:10} }, "Culori layere"),
+          React.createElement("div", { className:"controls-row" }, [
+            React.createElement("div", null, [
+              React.createElement("div", { className:"label" }, "Layer 1 (Top)"),
+              React.createElement("input", { type:"color", value:cTop, onInput:e=>setCTop(e.target.value) })
+            ]),
+            React.createElement("div", null, [
+              React.createElement("div", { className:"label" }, "Layer 2 (Mijloc)"),
+              React.createElement("input", { type:"color", value:cMid, onInput:e=>setCMid(e.target.value) })
+            ])
+          ]),
+          React.createElement("div", { className:"controls-row" }, [
+            React.createElement("div", null, [
+              React.createElement("div", { className:"label" }, "Layer 3 (Baza)"),
+              React.createElement("input", { type:"color", value:cBase, onInput:e=>setCBase(e.target.value) })
+            ]),
+            React.createElement("div", null, [
+              React.createElement("div", { className:"label" }, "Bubble padding"),
+              React.createElement("input", { type:"range", min:8, max:80, value:toValueStr(pad), onChange:e=>setPad(toNum(e.target.value, 28)) })
+            ])
+          ]),
+
+          React.createElement("label", { style:{display:"flex", gap:8, alignItems:"center", marginTop:8} }, [
+            React.createElement("input", { type:"checkbox", checked:round, onChange:e=>setRound(e.target.checked) }),
+            React.createElement("span", null, "Rotunjit")
+          ]),
+
+          React.createElement("div", { style:{marginTop:12, display:"grid", gap:"8px"} }, [
+            React.createElement("button", { className:"btn", onClick:downloadSVG, disabled: !paths || !paths.length }, "Descarca SVG (toate layerele)"),
+            React.createElement("div", { className:"controls-row" }, [
+              React.createElement("button", { className:"btn", onClick:()=>downloadSingleLayer("top"), disabled: !paths || !paths.length }, "Descarca Layer Top"),
+              React.createElement("button", { className:"btn", onClick:()=>downloadSingleLayer("mid"), disabled: !paths || !paths.length }, "Descarca Layer Mid")
+            ]),
+            React.createElement("div", { className:"controls-row" }, [
+              React.createElement("button", { className:"btn", onClick:()=>downloadSingleLayer("base"), disabled: !paths || !paths.length }, "Descarca Layer Baza")
+            ])
+          ]),
+
+          React.createElement("div", { className:"hint" },
+            "Fonturile sunt citite din /assets/fonts/fonts.json (chei: id, label, file).")
+        ]),
+
+        React.createElement("div", { className:"card" }, [
+          React.createElement("div", { className:"grid" },
+            React.createElement(Preview, {
+              svgRef,
+              paths,
+              textBBox,
+              colors: previewColors,
+              pad,
+              rounded: round,
+              fontSizePx,
+              setFontSizePx,
+              lineData,
+              lineOffsets
+            })
+          )
+        ])
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("app")).render(React.createElement(App));
+    console.log("%cindex.html simplu ï¿½ gata", "color:#16a34a");
+  </script>
+</body>
+<!-- TOFIXED_SHIM_ACTIVE -->
+<script>
+(function(){
+  // 1) LOG ERORI CU LOCATIE
+  window.addEventListener('error', function (ev) {
+    try {
+      console.log('[RUNTIME ERROR]', ev.message, 'at', ev.filename + ':' + ev.lineno + ':' + ev.colno);
+    } catch(_) {}
+  });
+  window.addEventListener('unhandledrejection', function (ev) {
+    try {
+      console.log('[UNHANDLED REJECTION]', ev.reason && (ev.reason.stack || ev.reason.message || ev.reason));
+    } catch(_) {}
+  });
+
+  // 2) COERCIE NUMERICA + FORMAT FARA Number.prototype.toFixed
+  function toNum(v, fb) {
+    if (typeof v === 'number') return Number.isFinite(v) ? v : (fb ?? 0);
+    if (v == null || v === '') return (fb ?? 0);
+    var s = (typeof v === 'string') ? v.replace(',', '.') : v;
+    var n = parseFloat(s);
+    return Number.isFinite(n) ? n : (fb ?? 0);
+  }
+  function formatFixed(value, digits, fallback) {
+    var d = (typeof digits === 'number' && digits >= 0) ? digits : 2;
+    var n = toNum(value, NaN);
+    if (!Number.isFinite(n)) {
+      var base = '0';
+      if (d > 0) base += '.' + '0'.repeat(d);
+      return (fallback != null) ? String(fallback) : base;
+    }
+    var p = Math.pow(10, d);
+    var rounded = Math.round(n * p) / p;
+    var s = String(rounded);
+    if (d > 0) {
+      var i = s.indexOf('.');
+      if (i === -1) s += '.' + '0'.repeat(d);
+      else {
+        var dec = s.length - i - 1;
+        if (dec < d) s += '0'.repeat(d - dec);
+      }
+    }
+    return s;
+  }
+  window.toNum = toNum;
+  window.fixed = formatFixed; // suprascrie orice helper fixed vechi
+
+  // 3) DEV SHIM: PREVINE CRASH LA .toFixed PE NON-NUMERE
+  //    (NU afecteaza Number.prototype; doar ofera un fallback pe alte obiecte)
+  if (!Object.prototype.hasOwnProperty('__toFixedShimInstalled')) {
+    Object.defineProperty(Object.prototype, 'toFixed', {
+      value: function(d){
+        var n = toNum(this, NaN);
+        if (Number.isFinite(n)) {
+          var dd = (typeof d==='number' && d>=0) ? d : 0;
+          return formatFixed(n, dd);
+        }
+        try { console.warn('Guarded toFixed on non-number object:', this); } catch(_){}
+        return String(this);
+      },
+      writable: false,
+      enumerable: false,
+      configurable: true
+    });
+    Object.defineProperty(Object.prototype, '__toFixedShimInstalled', { value: true });
+  }
+})();
+</script>
+</html>
