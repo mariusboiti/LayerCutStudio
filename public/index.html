@@ -276,17 +276,36 @@
       }
       return all;
     }
-    function polysUnionAndOffset(polys, delta){
+    function polysUnionAndOffset(polys, delta, corner='round'){
       if(!Array.isArray(polys)||!polys.length||typeof ClipperLib==='undefined') return "";
       const S=1000, toI=pp=>pp.map(p=>({X:Math.round(p.X*S),Y:Math.round(p.Y*S)})), fromI=pp=>pp.map(p=>({x:p.X/S,y:p.Y/S}));
       let subj=polys.map(toI);
       subj=ClipperLib.Clipper.CleanPolygons(subj,0.1*S);
       subj=ClipperLib.Clipper.SimplifyPolygons(subj,ClipperLib.PolyFillType.pftEvenOdd);
-      const c=new ClipperLib.Clipper(); c.AddPaths(subj,ClipperLib.PolyType.ptSubject,true);
-      const uni=[]; c.Execute(ClipperLib.ClipType.ctUnion,uni,ClipperLib.PolyFillType.pftEvenOdd,ClipperLib.PolyFillType.pftEvenOdd);
-      const co=new ClipperLib.ClipperOffset(2.0,0.25*S); co.AddPaths(ClipperLib.Clipper.CleanPolygons(uni,0.08*S),ClipperLib.JoinType.jtRound,ClipperLib.EndType.etClosedPolygon);
-      const sol=[]; co.Execute(sol, Math.round(Math.max(0.25,delta)*S));
-      let d=""; for(const path of ClipperLib.Clipper.CleanPolygons(sol,0.05*S)){ const poly=fromI(path); if(poly.length<2) continue; d+=`M ${poly[0].x.toFixed(2)} ${poly[0].y.toFixed(2)} `; for(let i=1;i<poly.length;i++){ d+=`L ${poly[i].x.toFixed(2)} ${poly[i].y.toFixed(2)} `;} d+="Z "; }
+
+      const c=new ClipperLib.Clipper();
+      c.AddPaths(subj,ClipperLib.PolyType.ptSubject,true);
+      const uni=[];
+      c.Execute(ClipperLib.ClipType.ctUnion,uni,ClipperLib.PolyFillType.pftEvenOdd,ClipperLib.PolyFillType.pftEvenOdd);
+
+      const joinType = (corner==='round') ? ClipperLib.JoinType.jtRound
+                       : (corner==='miter') ? ClipperLib.JoinType.jtMiter
+                       : ClipperLib.JoinType.jtSquare;
+
+      const co=new ClipperLib.ClipperOffset(2.0,0.25*S);
+      co.AddPaths(ClipperLib.Clipper.CleanPolygons(uni,0.08*S), joinType, ClipperLib.EndType.etClosedPolygon);
+
+      const sol = [];
+      const off = Math.round(Math.max(0, delta)*S); // delta în px
+      co.Execute(sol, off);
+
+      let d="";
+      for(const path of ClipperLib.Clipper.CleanPolygons(sol,0.05*S)){
+        const poly=fromI(path); if(poly.length<2) continue;
+        d+=`M ${poly[0].x.toFixed(2)} ${poly[0].y.toFixed(2)} `;
+        for(let i=1;i<poly.length;i++){ d+=`L ${poly[i].x.toFixed(2)} ${poly[i].y.toFixed(2)} `; }
+        d+="Z ";
+      }
       return d.trim();
     }
 
@@ -311,7 +330,10 @@
       midExpanded,
       midExpandedD,
       baseExpanded,
-      baseExpandedD
+      baseExpandedD,
+      extraExpandedD,
+      layerCount,
+      extraMeta
     }) {
       const dragRef   = useRef({ active: false, index: -1, sx: 0, sy: 0, ox: 0, oy: 0 });
       const scaleRef  = useRef({ active: false, cx: 0, cy: 0, startDist: 1, startSize: fontSizePx });
@@ -479,26 +501,57 @@
           key: "zoomwrap",
           transform: `translate(${(DESIGN_W/2)*(1-zoom)}, ${(DESIGN_H/2)*(1-zoom)}) scale(${zoom})`
         }, [
-          // layer base (FILL + STROKE)
-          ...(showBase ? (paths || []).map((d, i) => React.createElement("path", { key: `base-fill-${i}`, d, fill: base })) : []),
-          ...(showBase ? (paths || []).map((d, i) => React.createElement("path", {
-            key: `base-stroke-${i}`, d, fill: "none", stroke: base,
-            strokeWidth: baseStroke, strokeLinejoin: lineJoin, strokeLinecap: rounded ? "round" : "butt", "data-layer": "base"
-          })) : []),
-          ...(showBase && baseExpanded && baseExpandedD ? [
-            React.createElement("path", { key:"base-expanded", d: baseExpandedD, fill: base })
-          ] : []),
-          // layer mid (FILL + STROKE)
-          ...(showMid ? (paths || []).map((d, i) => React.createElement("path", { key: `mid-fill-${i}`, d, fill: mid })) : []),
-          ...(showMid ? (paths || []).map((d, i) => React.createElement("path", {
-            key: `mid-stroke-${i}`, d, fill: "none", stroke: mid,
-            strokeWidth: midStroke, strokeLinejoin: lineJoin, strokeLinecap: rounded ? "round" : "butt", "data-layer": "mid"
-          })) : []),
-          ...(showMid && midExpanded && midExpandedD ? [
-            React.createElement("path", { key:"mid-expanded", d: midExpandedD, fill: mid })
-          ] : []),
-          // layer top
-          ...(showTop ? (paths || []).map((d, i) => React.createElement("path", { key: `top-${i}`, d, fill: top })) : []),
+          // === LAYERE DINAMICE — ORDIN: EXTERIOR -> INTERIOR, cu TOP la FINAL ===
+ 
+          // 1) BASE (dacă layerCount >= 2)
+          ...((layerCount >= 2 && showBase) ? (
+            baseExpanded && baseExpandedD
+              ? [ React.createElement("path", { key:"base-expanded", d: baseExpandedD, fill: (colors?.base || "#111827") }) ]
+              : (paths || []).map((d, i) => [
+                  React.createElement("path", { key:`base-fill-${i}`, d, fill:(colors?.base || "#111827") }),
+                  React.createElement("path", {
+                    key:`base-stroke-${i}`, d, fill:"none",
+                    stroke:(colors?.base || "#111827"),
+                    strokeWidth: Math.max(1, Math.round(padBase || 0)),
+                    strokeLinejoin: (rounded ? "round" : "miter"),
+                    strokeLinecap:  (rounded ? "round" : "butt")
+                  })
+                ]).flat()
+          ) : []),
+ 
+          // 2) EXTRA (dacă layerCount > 3) — EXTERIOR -> INTERIOR
+          ...((layerCount > 3 && extraExpandedD && extraExpandedD.length)
+            ? extraExpandedD.map((d, idx) => {
+                const meta = (extraMeta && extraMeta[idx]) || {};
+                if (meta.show === false) return null;
+                return React.createElement("path", {
+                  key:`extra-${idx}`,
+                  d,
+                  fill: meta.color || (colors?.base || "#111827")
+                });
+              }).filter(Boolean)
+            : []),
+ 
+          // 3) MID (dacă layerCount >= 3)
+          ...((layerCount >= 3 && showMid) ? (
+            midExpanded && midExpandedD
+              ? [ React.createElement("path", { key:"mid-expanded", d: midExpandedD, fill: (colors?.mid || "#ef4444") }) ]
+              : (paths || []).map((d, i) => [
+                  React.createElement("path", { key:`mid-fill-${i}`, d, fill:(colors?.mid || "#ef4444") }),
+                  React.createElement("path", {
+                    key:`mid-stroke-${i}`, d, fill:"none",
+                    stroke:(colors?.mid || "#ef4444"),
+                    strokeWidth: Math.max(1, Math.round(padMid || 0)),
+                    strokeLinejoin: (rounded ? "round" : "miter"),
+                    strokeLinecap:  (rounded ? "round" : "butt")
+                  })
+                ]).flat()
+          ) : []),
+ 
+          // 4) TOP — ULTIMUL, ca să fie VIZIBIL deasupra
+          ...(showTop ? (paths || []).map((d, i) =>
+            React.createElement("path", { key: `top-${i}`, d, fill: (colors?.top || "#ffffff") })
+          ) : []),
 
           // zone drag pe fiecare rând
           ...(lineData || []).map((line) => React.createElement("path", {
@@ -559,6 +612,9 @@
       // Grosimi per layer
       const [padMid, setPadMid]   = useState(16); // default aprox. 0.55 * 28
       const [padBase, setPadBase] = useState(28);
+      // grosimi "înghețate" la apăsarea Set
+      const [midExpandedPad, setMidExpandedPad] = useState(null);
+      const [baseExpandedPad, setBaseExpandedPad] = useState(null);
       // KILO test flag (doar pentru verificare patch)
       const [midExpandedTest, setMidExpandedTest] = React.useState(false);
       function applyExpandMiddleTest(){
@@ -578,16 +634,66 @@
       // Expand flags (controlate din butoanele Set)
       const [midExpanded, setMidExpanded]   = useState(false);
       const [baseExpanded, setBaseExpanded] = useState(false);
+      // Layere intermediare (max 2): [Layer 4, Layer 5]
+      const [extraLayers, setExtraLayers] = useState([
+        { id: 4, pad: Math.round((28*2 + 16)/3), color: "#9ca3af", show: true, expanded: true },
+        { id: 5, pad: Math.round((28 + 16*2)/3), color: "#6b7280", show: true, expanded: true }
+      ]);
+      const [layerCount, setLayerCount] = useState(3);
 
       // Le expunem pe window, ca să fie chemate de butoanele deja legate în HTML
+      const resetDesign = () => {
+        setFontSizePx(140);
+        setSelectedLineId('line1');
+        setLines({ line1: { x: 0, y: 0 }, line2: { x: 0, y: 0 }, line3: { x: 0, y: 0 } });
+        setText("Marius");
+        setText2("");
+        setText3("");
+        setLineSpacing(0.95);
+        setLetterSpacing(0);
+        setCTop("#ffffff");
+        setCMid("#ef4444");
+        setCBase("#111827");
+        setPadMid(16);
+        setPadBase(28);
+        setPadTop(0);
+        setShowTop(true);
+        setShowMid(true);
+        setShowBase(true);
+        setMidExpanded(false);
+        setBaseExpanded(false);
+        setMidExpandedPad(null);
+        setBaseExpandedPad(null);
+        setExtraLayers([ { id: 4, pad: Math.round((28*2 + 16)/3), color: "#9ca3af", show: true, expanded: true }, { id: 5, pad: Math.round((28 + 16*2)/3), color: "#6b7280", show: true, expanded: true } ]);
+        setLayerCount(3);
+        setRound(true);
+        setZoom(1);
+        setUnit('px');
+      };
+
       useEffect(() => {
-        window.applyExpandMid  = () => setMidExpanded(true);
-        window.applyExpandBase = () => setBaseExpanded(true);
+        window.applyExpandMid   = () => { setMidExpandedPad(padMid);  setMidExpanded(true);  };
+        window.resetExpandMid   = () => { setMidExpandedPad(null);    setMidExpanded(false); };
+
+        window.applyExpandBase  = () => { setBaseExpandedPad(padBase); setBaseExpanded(true); };
+        window.resetExpandBase  = () => { setBaseExpandedPad(null);    setBaseExpanded(false); };
+
         return () => {
           delete window.applyExpandMid;
+          delete window.resetExpandMid;
           delete window.applyExpandBase;
+          delete window.resetExpandBase;
         };
-      }, []);
+      }, [padMid, padBase]);
+
+      // când modifici numărul total de layere, păstrăm doar primele (dacă e cazul)
+      useEffect(() => {
+        const need = Math.max(0, Math.min(2, layerCount - 3));
+        if (extraLayers.length !== 2 || need === 2) return; // avem deja 2, sau nu trebuie tăiat
+        setExtraLayers(prev => prev.slice(0, need || 0).concat(Array(need - (prev.slice(0, need).length)).fill(null).map((_,i)=>({
+          id: 4 + i, pad: Math.round((padBase + padMid)/2), color: "#9ca3af", show: true, expanded: true
+        }))));
+      }, [layerCount]); // intenționat doar la schimbarea layerCount
 
       const scale = useMemo(() => fontSizePx / 100, [fontSizePx]);
 
@@ -685,15 +791,38 @@
         const allPolys = perLine.flatMap(line =>
           makePolysFromText(font, line.value, fontSizePx, line.x, line.y, letterSpacing)
         );
-        const midExpandedD = polysUnionAndOffset(allPolys, padMid);
-        const baseExpandedD = polysUnionAndOffset(allPolys, padBase);
+
+        // Deltele trebuie să fie stroke-ul REAL/2.
+        // Tipul de colț trebuie să fie în acord cu „Rotunjit”.
+        const midStroke  = Math.max(1, Math.round(padMid  || 0));
+        const baseStroke = Math.max(1, Math.round(padBase || 0));
+        const cornerType = (round ? 'round' : 'miter');
+
+        const expandD = (deltaPx) => polysUnionAndOffset(allPolys, deltaPx, cornerType);
+
+        const midExpandedD  = expandD(((midExpandedPad  != null) ? midExpandedPad  : midStroke)  * 0.5);
+        const baseExpandedD = expandD(((baseExpandedPad != null) ? baseExpandedPad : baseStroke) * 0.5);
+
+        const exCount = Math.max(0, Math.min(2, layerCount - 3));
+        const extrasUsed = extraLayers.slice(0, exCount);
+        const extraExpandedD = extrasUsed.map(ex => {
+          const strokeW = Math.max(1, Math.round(ex.pad || 0));
+          return expandD(strokeW * 0.5);
+        });
 
         const hasBox = Number.isFinite(minX) && Number.isFinite(minY) && Number.isFinite(maxX) && Number.isFinite(maxY);
         const paths = perLine.map(line => line.d);
-        return { paths, bbox: hasBox ? { minX, minY, maxX, maxY } : null, lines: perLine, midExpandedD, baseExpandedD };
-      }, [font, text, text2, text3, fontSizePx, lines, lineSpacing, letterSpacing]);
+        return { paths, bbox: hasBox ? { minX, minY, maxX, maxY } : null, lines: perLine, midExpandedD, baseExpandedD, extraExpandedD };
+      }, [
+        font, text, text2, text3,
+        fontSizePx, lines, lineSpacing, letterSpacing,
+        layerCount, round,
+        padMid, padBase,                 // <- slider-ele
+        midExpandedPad, baseExpandedPad, // <- valorile "înghețate" la Set
+        extraLayers                      // <- dacă ai 4/5 layere
+      ]);
 
-      const { paths, bbox: textBBox, lines: lineData, midExpandedD, baseExpandedD } = layout;
+      const { paths, bbox: textBBox, lines: lineData, midExpandedD, baseExpandedD, extraExpandedD } = layout;
       const svgRef = useRef(null);
       const previewColors = useMemo(() => ({ top: cTop, mid: cMid, base: cBase }), [cTop, cMid, cBase]);
 
@@ -831,29 +960,45 @@
         const outlineBase = false;
         // respectă vizibilitatea: showTop/showMid/showBase
         let out = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${DESIGN_W} ${DESIGN_H}" width="${DESIGN_W}" height="${DESIGN_H}">`;
-        if (showBase) {
+
+        // BASE
+        if (layerCount >= 2 && showBase) {
           if (baseExpanded && baseExpandedD) {
             out += `<path d="${baseExpandedD}" fill="${cBase}"/>`;
           } else {
-            (paths||[]).forEach(d=>{ if(!outlineBase) out+=`<path d="${d}" fill="${cBase}"/>`; out+=`<path d="${d}" fill="none" stroke="${cBase}" stroke-width="${baseStroke}" stroke-linejoin="${lineJoin}" stroke-linecap="${lineCap}"/>`;});
+            (paths||[]).forEach(d=>{
+              out += `<path d="${d}" fill="${cBase}"/>`;
+              out += `<path d="${d}" fill="none" stroke="${cBase}" stroke-width="${Math.max(1, Math.round(padBase||0))}" stroke-linejoin="${round ? "round":"miter"}" stroke-linecap="${round ? "round":"butt"}"/>`;
+            });
           }
         }
-        if (showMid) {
+
+        // EXTRA (dacă layerCount > 3) cu culorile proprii
+        if (layerCount > 3 && extraExpandedD && extraExpandedD.length) {
+          const extrasUsed = extraLayers.slice(0, Math.max(0, Math.min(2, layerCount-3)));
+          extraExpandedD.forEach((d, idx) => {
+            const meta = extrasUsed[idx] || {};
+            if (d && meta.show !== false) {
+              out += `<path d="${d}" fill="${meta.color || cBase}"/>`;
+            }
+          });
+        }
+
+        // MID
+        if (layerCount >= 3 && showMid) {
           if (midExpanded && midExpandedD) {
             out += `<path d="${midExpandedD}" fill="${cMid}"/>`;
           } else {
-            (paths||[]).forEach(d=>{ if(!outlineMid) out+=`<path d="${d}" fill="${cMid}"/>`; out+=`<path d="${d}" fill="none" stroke="${cMid}" stroke-width="${midStroke}" stroke-linejoin="${lineJoin}" stroke-linecap="${lineCap}"/>`;});
-          }
-        }
-        if (showTop) {
-          if (topStroke>0) {
-            paths.forEach(d => {
-              out += `<path d="${d}" fill="none" stroke="${cTop}" stroke-width="${topStroke}" stroke-linejoin="${lineJoin}" stroke-linecap="${lineCap}"/>`;
+            (paths||[]).forEach(d=>{
+              out += `<path d="${d}" fill="${cMid}"/>`;
+              out += `<path d="${d}" fill="none" stroke="${cMid}" stroke-width="${Math.max(1, Math.round(padMid||0))}" stroke-linejoin="${round ? "round":"miter"}" stroke-linecap="${round ? "round":"butt"}"/>`;
             });
           }
-          paths.forEach(d => {
-            out += `<path d="${d}" fill="${cTop}"/>`;
-          });
+        }
+
+        // TOP (la final)
+        if (showTop) {
+          paths.forEach(d => { out += `<path d="${d}" fill="${cTop}"/>`; });
         }
         out += `</svg>`;
         const blob = new Blob([out], { type: "image/svg+xml" });
@@ -1029,6 +1174,37 @@
           ]),
           React.createElement("div", { className:"hint" }, `Scalare uniformă (păstrează proporțiile) • Unitate curentă: ${unit}`),
 
+          // === Select număr de layere (1–5) ===
+          React.createElement("div", { className:"label", style:{marginTop:10} }, "Layere (1–5)"),
+          React.createElement("div", { className:"controls-row" }, [
+            React.createElement("div", { key:"lc-input" }, [
+              React.createElement("input", {
+                type:"number", min:1, max:5, step:1,
+                value: String(layerCount),
+                onChange: e => {
+                  const v = parseInt(e.target.value || "3", 10);
+                  const clamped = Math.min(5, Math.max(1, isNaN(v) ? 3 : v));
+                  setLayerCount(clamped);
+                }
+              })
+            ]),
+            React.createElement("div", { key:"lc-buttons", style:{display:"flex", gap:6, alignItems:"center", justifyContent:"flex-end"} },
+              [1,2,3,4,5].map(n =>
+                React.createElement("button", {
+                  key:`btn-${n}`,
+                  type:"button",
+                  onClick: ()=>setLayerCount(n),
+                  className:"icon-btn",
+                  "aria-pressed": layerCount===n,
+                  title: `${n} ${n===1?'layer':'layere'}`
+                }, String(n))
+              )
+            )
+          ]),
+          React.createElement("div", { className:"hint" },
+            "1: doar Top • 2: Top + Bază • 3: Top + Mijloc + Bază • 4/5: layere intermediare între Mijloc și Bază"
+          ),
+
           React.createElement("div", { className:"label", style:{marginTop:10} }, "Layere"),
           React.createElement("div", { className:"controls-row" }, [
             React.createElement("div", null, [
@@ -1056,10 +1232,16 @@
                 value: padMid,
                 onChange: e => setPadMid(+e.target.value)
               }),
-              React.createElement("button", {
-                onClick: () => (window.applyExpandMid ? window.applyExpandMid() : console.log("applyExpandMid placeholder")),
-                style: { marginTop: 4, padding: "2px 6px", fontSize: 12, cursor: "pointer" }
-              }, "Set")
+              React.createElement("div", { style:{ display:"flex", gap:6, marginTop:4 } }, [
+                React.createElement("button", {
+                  onClick: () => (window.applyExpandMid ? window.applyExpandMid() : console.log("applyExpandMid placeholder")),
+                  style: { padding: "2px 6px", fontSize: 12, cursor: "pointer" }
+                }, "Set"),
+                React.createElement("button", {
+                  onClick: () => (window.resetExpandMid ? window.resetExpandMid() : console.log("resetExpandMid placeholder")),
+                  style: { padding: "2px 6px", fontSize: 12, cursor: "pointer", background:"#eee", border:"1px solid #d1d5db", borderRadius:6 }
+                }, "Reset")
+              ])
             ])
           ]),
           React.createElement("div", { className:"controls-row" }, [
@@ -1079,11 +1261,56 @@
                 React.createElement("button", {
                   onClick: () => (window.applyExpandBase ? window.applyExpandBase() : console.log("applyExpandBase placeholder")),
                   style: { marginTop: 4, padding: "2px 6px", fontSize: 12, cursor: "pointer" }
-                }, "Set")
+                }, "Set"),
+                React.createElement("button", {
+                  onClick: () => (window.resetExpandBase ? window.resetExpandBase() : console.log("resetExpandBase placeholder")),
+                  style: { padding: "2px 6px", fontSize: 12, cursor: "pointer", background:"#eee", border:"1px solid #d1d5db", borderRadius:6 }
+                }, "Reset")
               ])
             ]),
             React.createElement("div", null)
           ]),
+
+          // --- Layere Intermediare (4/5) ---
+          (layerCount > 3) ? React.createElement(
+            React.Fragment,
+            { key:"extraLayersUI" },
+            extraLayers.slice(0, Math.max(0, Math.min(2, layerCount-3))).map((ex, idx) => (
+              React.createElement("div", { className:"controls-row", key:`ui-extra-${ex.id}` }, [
+                React.createElement("div", { key:`extra-${ex.id}-left` }, [
+                  React.createElement("div", { className:"label" }, `Layer ${ex.id} (Intermediar ${idx+1})`),
+                  React.createElement("div", { className:"layer-row" }, [
+                    React.createElement("input", {
+                      type:"color",
+                      value: ex.color,
+                      onInput: e => setExtraLayers(prev => prev.map((it,i)=> i===idx ? {...it, color: e.target.value} : it))
+                    }),
+                    React.createElement("button", {
+                      className:"eye-btn",
+                      "aria-pressed": ex.show !== false,
+                      onClick: () => setExtraLayers(prev => prev.map((it,i)=> i===idx ? {...it, show: !(it.show !== false)} : it))
+                    }, EyeIcon(ex.show !== false))
+                  ]),
+                  React.createElement("div", { className:"label", style:{marginTop:6} }, "Grosime (Intermediar)"),
+                  React.createElement("div", { className:"controls-row", style:{ gap:8, alignItems:"center" } }, [
+                    React.createElement("input", {
+                      type:"range", min:1, max:200,
+                      value: String(ex.pad),
+                      onChange: e => {
+                        const v = Math.max(1, Math.min(200, parseInt(e.target.value||ex.pad,10) || ex.pad));
+                        setExtraLayers(prev => prev.map((it,i)=> i===idx ? {...it, pad: v} : it));
+                      }
+                    }),
+                    React.createElement("button", {
+                      onClick: () => setExtraLayers(prev => prev.map((it,i)=> i===idx ? {...it, expanded: true} : it)),
+                      style: { marginTop: 4, padding: "2px 6px", fontSize: 12, cursor: "pointer" }
+                    }, "Set")
+                  ])
+                ]),
+                React.createElement("div", { key:`extra-${ex.id}-right` })
+              ])
+            ))
+          ) : null,
 
           /* blocul de vizibilitate separat a fost înlocuit de iconițe lângă culori */
 
@@ -1093,12 +1320,24 @@
           ),
 
           React.createElement("div", { style:{marginTop:12, display:"grid", gap:"8px"} },
-            React.createElement("button", { className:"btn", onClick:downloadSVG, disabled: !paths || !paths.length }, "Descarcă SVG (toate layerele)"),
-            React.createElement("div", { className:"controls-row" },
+            // <-- Butonul nou de reset total
+            React.createElement("button", {
+              key:"btn-reset-total",
+              className:"btn",
+              onClick: resetDesign,
+              style:{ background:"#ef4444", borderColor:"#ef4444" }
+            }, "Resetare totală"),
+            React.createElement("button", {
+              key:"btn-export-all",
+              className:"btn",
+              onClick:downloadSVG,
+              disabled: !paths || !paths.length
+            }, "Descarcă SVG (toate layerele)"),
+            React.createElement("div", { key:"row-export-1", className:"controls-row" },
               React.createElement("button", { className:"btn", onClick:()=>downloadSingleLayer("top"), disabled: !paths || !paths.length }, "Descarcă Layer Top"),
               React.createElement("button", { className:"btn", onClick:()=>downloadSingleLayer("mid"), disabled: !paths || !paths.length }, "Descarcă Layer Mid")
             ),
-            React.createElement("div", { className:"controls-row" },
+            React.createElement("div", { key:"row-export-2", className:"controls-row" },
               React.createElement("button", { className:"btn", onClick:()=>downloadSingleLayer("base"), disabled: !paths || !paths.length }, "Descarcă Layer Bază")
             )
           ),
@@ -1135,7 +1374,10 @@
                 midExpanded,
                 midExpandedD,
                 baseExpanded,
-                baseExpandedD
+                baseExpandedD,
+                extraExpandedD,
+                layerCount,
+                extraMeta: extraLayers.slice(0, Math.max(0, Math.min(2, layerCount-3)))
               }),
               React.createElement("div", { className:"zoom-overlay" }, [
                 React.createElement("input", {
