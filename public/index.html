@@ -2658,5 +2658,25 @@
     window.__LCS_NORMALIZE__ = { normalizeSnapshot: normalizeSnapshot };
   })();
   </script>
+  <!-- Cleanup: remove all dev/test banners (Codex & Kilo) -->
+  <script>
+  (function(){
+    try{
+      // remove our test banners by id (if present)
+      ['#codex-dev-banner', '#codex-banner'].forEach(function(sel){
+        document.querySelectorAll(sel).forEach(function(el){ el.remove(); });
+      });
+      // remove any element that contains the text "KILO PATCH OK"
+      var re = /KILO\s*PATCH\s*OK/i;
+      var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT, null);
+      var toRemove = [];
+      while (walker.nextNode()) {
+        var el = walker.currentNode;
+        if (el && el.textContent && re.test(el.textContent)) toRemove.push(el);
+      }
+      toRemove.forEach(function(el){ if (el && el.parentNode) el.parentNode.removeChild(el); });
+    } catch(e) { /* silent */ }
+  })();
+  </script>
 </body>
 </html>
