@@ -2995,5 +2995,103 @@
     window.pushHistory = function(){ try { window.LCS.history.push('manual'); } catch(_){ } };
   })();
   </script>
+  <!-- Command Palette (Ctrl+K) -->
+  <style>
+    #lcs-cmdk { display:none; position:fixed; inset:0; z-index:99998; background:rgba(0,0,0,.35); align-items:flex-start; justify-content:center; padding-top:10vh; }
+    #lcs-cmdk .box { width:min(720px,92vw); background:#fff; border-radius:12px; box-shadow:0 10px 40px rgba(0,0,0,.35); overflow:hidden; }
+    #lcs-cmdk input { width:100%; padding:14px 16px; border:0; outline:none; font:500 16px/1.2 system-ui,Segoe UI,Roboto; border-bottom:1px solid #eee; }
+    #lcs-cmdk ul { list-style:none; margin:0; padding:6px; max-height:50vh; overflow:auto; }
+    #lcs-cmdk li { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 12px; border-radius:8px; cursor:pointer; }
+    #lcs-cmdk li:hover, #lcs-cmdk li.active { background:#f3f4f6; }
+    #lcs-cmdk small.kbd { font:600 11px/1 system-ui; background:#eef2ff; color:#1f2937; padding:3px 6px; border-radius:6px; border:1px solid #e5e7eb; }
+  </style>
+  <div id="lcs-cmdk">
+    <div class="box">
+      <input id="lcs-cmdk-q" type="text" placeholder="Type a command… (Esc to close)" autocomplete="off" />
+      <ul id="lcs-cmdk-list"></ul>
+    </div>
+  </div>
+  <script>
+  (function(){
+    if (window.__LCS_CMDK__) return; window.__LCS_CMDK__ = true;
+    var wrap = document.getElementById('lcs-cmdk');
+    var q = document.getElementById('lcs-cmdk-q');
+    var list = document.getElementById('lcs-cmdk-list');
+
+    function exists(fn){ return typeof fn === 'function'; }
+    function run(cmd){
+      try { cmd && cmd.action && cmd.action(); } catch(e){ console.warn('[cmdk]', e); }
+      close();
+    }
+    function open(){ wrap.style.display='flex'; q.value=''; render(items); setTimeout(function(){ q.focus(); }, 0); }
+    function close(){ wrap.style.display='none'; }
+
+    // Comenzi disponibile (apelează APIs existente dacă există)
+    var items = [
+      { title:'Undo', hint:'Ctrl+Z', action:function(){ window.undo && window.undo(); } },
+      { title:'Redo', hint:'Ctrl+Shift+Z / Ctrl+Y', action:function(){ window.redo && window.redo(); } },
+      { title:'Reset project', action:function(){ window.resetDesign && window.resetDesign(); } },
+      { title:'Save project (localStorage)', hint:'Ctrl+S', action:function(){ window.LCS_Project && window.LCS_Project.saveToLocal(); } },
+      { title:'Load autosave', action:function(){ window.LCS_Project && window.LCS_Project.loadFromLocal(); } },
+      { title:'Export .lcs', action:function(){ window.LCS_Project && window.LCS_Project.export(); } },
+      { title:'Import .lcs', hint:'Ctrl+O', action:function(){ var el=document.getElementById('lcs-import'); if(el) el.click(); } },
+      { title:'Zoom: reset to 100%', action:function(){ try{ var s=window.getSnapshot(); s.zoom=1; window.applySnapshot(s); window.LCS && window.LCS.history && window.LCS.history.push('zoom-reset'); }catch(_){} } },
+      { title:'Unit: toggle mm/in', action:function(){ try{ var s=window.getSnapshot(); s.unit=(s.unit==='mm'?'in':'mm'); window.applySnapshot(s); window.LCS && window.LCS.history && window.LCS.history.push('unit-toggle'); }catch(_){} } },
+      { title:'Open settings', action:function(){ var b=document.getElementById('lcs-gear-btn'); if(b){ b.click(); } } },
+    ];
+
+    function matchScore(s, q){
+      s = s.toLowerCase(); q = q.toLowerCase().trim();
+      if (!q) return 1;
+      var i=0; for (var c of q){ i = s.indexOf(c, i); if (i === -1) return 0; i++; }
+      return q.length / s.length + (s.startsWith(q)?0.5:0); // fuzzy + boost prefix
+    }
+    function render(data, needle){
+      var scored = data.map(function(it){ return {it:it, sc: matchScore(it.title + ' ' + (it.hint||''), needle||'')}; })
+                       .filter(function(x){ return x.sc>0; })
+                       .sort(function(a,b){ return b.sc - a.sc; })
+                       .map(function(x){ return x.it; });
+      list.innerHTML = '';
+      var idx = 0;
+      scored.forEach(function(it, i){
+        var li = document.createElement('li');
+        li.tabIndex = 0;
+        li.className = i===0 ? 'active' : '';
+        li.innerHTML = '<span>'+it.title+'</span>' + (it.hint?'<small class="kbd">'+it.hint+'</small>':'');
+        li.addEventListener('click', function(){ run(it); });
+        list.appendChild(li);
+      });
+      // keyboard nav
+      var pos = 0;
+      function setActive(n){
+        var items = list.querySelectorAll('li');
+        if (!items.length) return;
+        pos = (n+items.length) % items.length;
+        items.forEach(function(el){ el.classList.remove('active'); });
+        items[pos].classList.add('active');
+        items[pos].scrollIntoView({block:'nearest'});
+      }
+      setActive(0);
+      q.oninput = function(){ render(items, q.value); };
+      q.onkeydown = function(e){
+        if (e.key === 'ArrowDown'){ e.preventDefault(); setActive(pos+1); }
+        else if (e.key === 'ArrowUp'){ e.preventDefault(); setActive(pos-1); }
+        else if (e.key === 'Enter'){ e.preventDefault(); var li=list.querySelectorAll('li')[pos]; if(li){ li.click(); } }
+        else if (e.key === 'Escape'){ e.preventDefault(); close(); }
+      };
+      wrap.onkeydown = function(e){ if (e.key === 'Escape'){ e.preventDefault(); close(); } };
+      wrap.onclick = function(e){ if (e.target === wrap) close(); };
+    }
+
+    // Shortcut Ctrl+K pentru deschidere (fără a fura input-urile)
+    function isEditable(el){ if(!el) return false; var t=(el.tagName||'').toLowerCase(); return ['input','textarea','select'].includes(t) || !!el.isContentEditable; }
+    window.addEventListener('keydown', function(e){
+      if (!e.ctrlKey && !e.metaKey) return;
+      if (isEditable(e.target)) return;
+      var k=(e.key||'').toLowerCase();
+      if (k === 'k'){ e.preventDefault(); open(); }
+    }, {passive:false});
+  })();
+  </script>
 </body>
 </html>
