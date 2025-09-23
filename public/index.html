@@ -3909,48 +3909,200 @@
   }, true);
 })();
   </script>
-  <!-- BOOT: start with empty canvas (wipe default demo once per page load) -->
-  <script>
-  (function(){
-    if (window.__LCS_BOOT_EMPTY__) return; window.__LCS_BOOT_EMPTY__=true;
-    // pornește o singură dată pe sesiune (tab)
-    if (sessionStorage.getItem('LCS:bootCleared')==='1') return;
-    function mainSVG(){
-      var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
-      a.sort(function(A,B){
-        function ar(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
-          if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3]; var r=x.getBoundingClientRect(); return r.width*r.height||0}
-        return ar(B)-ar(A);
-      });
-      return a[0];
-    }
-    function wipe(svg){
-      if (!svg) return false;
-      var keep = {defs:1,title:1,desc:1,metadata:1,clipPath:1,mask:1,pattern:1,linearGradient:1,radialGradient:1};
-      // păstrăm doar defs/metadata; golim restul
-      [].slice.call(svg.childNodes).forEach(function(n){
-        if (n.nodeType!==1) return; // element nodes
-        var t=(n.tagName||'').toLowerCase();
-        if (!keep[t]) { try{ n.remove(); }catch(_){}} 
-      });
-      // creăm un strat "root" gol pentru app
-      var g=document.createElementNS('http://www.w3.org/2000/svg','g');
-      g.setAttribute('class','lcs-root'); g.setAttribute('data-export','true');
-      svg.appendChild(g);
-      try{ window.LCS && window.LCS.history && window.LCS.history.push('boot-clear'); }catch(_){}
-      return true;
-    }
-    // așteaptă până când React a montat SVG-ul
-    var tries=0;
-    (function tick(){
-      var svg = mainSVG();
-      if (svg && wipe(svg)){
-        sessionStorage.setItem('LCS:bootCleared','1');
-        return;
+<!-- Marquee Selection (drag to select multiple) – style -->
+<style>
+  /* doar pentru highlight vizual al selecției existente (dacă nu ai deja) */
+  svg .selected { outline: none; }
+</style>
+
+<!-- BOOT: start with empty canvas (wipe default demo once per page load) -->
+<script>
+(function(){
+  if (window.__LCS_BOOT_EMPTY__) return; window.__LCS_BOOT_EMPTY__=true;
+  // pornește o singură dată pe sesiune (tab)
+  if (sessionStorage.getItem('LCS:bootCleared')==='1') return;
+
+  function mainSVG(){
+    var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
+    a.sort(function(A,B){
+      function ar(x){
+        var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
+        if(vb.length===4&&vb.every(isFinite)) return vb[2]*vb[3];
+        var r=x.getBoundingClientRect(); return r.width*r.height||0;
       }
-      if (++tries<120) return setTimeout(tick, 50); // până la ~6s
-    })();
+      return ar(B)-ar(A);
+    });
+    return a[0];
+  }
+
+  function wipe(svg){
+    if (!svg) return false;
+    var keep = {defs:1,title:1,desc:1,metadata:1,clipPath:1,mask:1,pattern:1,linearGradient:1,radialGradient:1};
+    // păstrăm doar defs/metadata; golim restul
+    [].slice.call(svg.childNodes).forEach(function(n){
+      if (n.nodeType!==1) return; // element nodes
+      var t=(n.tagName||'').toLowerCase();
+      if (!keep[t]) { try{ n.remove(); }catch(_){} }
+    });
+    // creăm un strat "root" gol pentru app
+    var g=document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.setAttribute('class','lcs-root'); g.setAttribute('data-export','true');
+    svg.appendChild(g);
+    try{ window.LCS && window.LCS.history && window.LCS.history.push('boot-clear'); }catch(_){}
+    return true;
+  }
+
+  // așteaptă până când React a montat SVG-ul
+  var tries=0;
+  (function tick(){
+    var svg = mainSVG();
+    if (svg && wipe(svg)){
+      sessionStorage.setItem('LCS:bootCleared','1');
+      return;
+    }
+    if (++tries<120) return setTimeout(tick, 50); // până la ~6s
   })();
+})();
+</script>
+
+<!-- Marquee Selection (drag to select multiple) – fixed for re-renders -->
+<script>
+(function(){
+  if (window.__LCS_MARQUEE__) return; window.__LCS_MARQUEE__ = true;
+
+  function mainSVG(){
+    var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
+    a.sort(function(A,B){
+      function area(x){
+        var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
+        if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];
+        var r=x.getBoundingClientRect(); return r.width*r.height||0;
+      }
+      return area(B)-area(A);
+    });
+    return a[0];
+  }
+
+  function svgPoint(svg, clientX, clientY){
+    var pt = svg.createSVGPoint(); pt.x = clientX; pt.y = clientY;
+    var m = svg.getScreenCTM(); if (!m) return {x:clientX,y:clientY};
+    var p = pt.matrixTransform(m.inverse()); return {x:p.x, y:p.y};
+  }
+
+  function ensureMarqueeRect(svg){
+    var g = svg.querySelector('g.lcs-marquee');
+    if (!g){
+      g = document.createElementNS('http://www.w3.org/2000/svg','g');
+      g.setAttribute('class','lcs-marquee');
+      svg.appendChild(g);
+    }
+    var r = g.querySelector('#lcs-marquee-rect');
+    if (!r){
+      r = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      r.setAttribute('id','lcs-marquee-rect');
+      r.setAttribute('fill','#3b82f6');
+      r.setAttribute('fill-opacity','0.12');
+      r.setAttribute('stroke','#3b82f6');
+      r.setAttribute('stroke-width','1');
+      r.setAttribute('stroke-dasharray','4,3');
+      r.setAttribute('pointer-events','none');
+      r.setAttribute('visibility','hidden');
+      g.appendChild(r);
+    }
+    return r;
+  }
+
+  function selectableNodes(svg){
+    var list = [].slice.call(svg.querySelectorAll('path,rect,circle,ellipse,polygon,polyline,g'));
+    return list.filter(function(n){
+      var tn = (n.tagName||'').toLowerCase();
+      if (tn==='svg'||tn==='defs'||tn==='clippath'||tn==='title'||tn==='desc') return false;
+      if (n.closest('defs')) return false;
+      return true;
+    });
+  }
+
+  function bboxOf(el){
+    try{ var b = el.getBBox(); return {x:b.x,y:b.y,width:b.width,height:b.height}; }catch(_){ return null; }
+  }
+  function rectsOverlap(a,b){
+    return a && b &&
+      (a.x < b.x + b.width) && (a.x + a.width > b.x) &&
+      (a.y < b.y + b.height) && (a.y + a.height > b.y);
+  }
+  function normalizeRect(x1,y1,x2,y2){
+    var x = Math.min(x1,x2), y=Math.min(y1,y2);
+    return {x:x,y:y,width:Math.abs(x2-x1),height:Math.abs(y2-y1)};
+  }
+
+  function clearSelection(svg){
+    [].slice.call(svg.querySelectorAll('[data-selected="1"],.selected')).forEach(function(n){
+      n.removeAttribute('data-selected'); n.classList.remove('selected');
+    });
+  }
+  function addSelected(nodes){
+    nodes.forEach(function(n){ n.setAttribute('data-selected','1'); n.classList.add('selected'); });
+  }
+  function canStartMarquee(e, svg){
+    // începe pe fundal sau dacă e ținut ALT
+    if (e.altKey) return true;
+    return e.target === svg;
+  }
+
+  var curSvg = null;
+  var rect = null;
+  var drag = {active:false, start:{x:0,y:0}, additive:false, forced:false};
+
+  document.addEventListener('mousedown', function(e){
+    if (e.button!==0) return; // doar click stânga
+    // svg curent = cel mai apropiat de target sau cel mai mare din pagină
+    curSvg = (e.target && e.target.closest && e.target.closest('svg')) || mainSVG();
+    if (!curSvg) return;
+    if (!canStartMarquee(e, curSvg) && e.target!==curSvg) return;
+    rect = ensureMarqueeRect(curSvg);
+    var p = svgPoint(curSvg, e.clientX, e.clientY);
+    drag.active = true; drag.start = p;
+    drag.additive = !!(e.shiftKey || e.ctrlKey || e.metaKey);
+    drag.forced = !!e.altKey;
+    rect.setAttribute('x', p.x); rect.setAttribute('y', p.y);
+    rect.setAttribute('width', 0); rect.setAttribute('height', 0);
+    rect.setAttribute('visibility','visible');
+    e.preventDefault();
+  }, true);
+
+  window.addEventListener('mousemove', function(e){
+    if (!drag.active) return;
+    if (!curSvg || !rect) return;
+    var p = svgPoint(curSvg, e.clientX, e.clientY);
+    var r = normalizeRect(drag.start.x, drag.start.y, p.x, p.y);
+    rect.setAttribute('x', r.x); rect.setAttribute('y', r.y);
+    rect.setAttribute('width', r.width); rect.setAttribute('height', r.height);
+    e.preventDefault();
+  }, true);
+
+  window.addEventListener('mouseup', function(e){
+    if (!drag.active) return;
+    if (!curSvg || !rect) return;
+    var end = svgPoint(curSvg, e.clientX, e.clientY);
+    var selRect = normalizeRect(drag.start.x, drag.start.y, end.x, end.y);
+    rect.setAttribute('visibility','hidden');
+    drag.active = false;
+
+    // calculează selecția
+    var candidates = selectableNodes(curSvg);
+    var picked = [];
+    for (var i=0;i<candidates.length;i++){
+      var bb = bboxOf(candidates[i]); if (!bb) continue;
+      if (rectsOverlap(selRect, bb)) picked.push(candidates[i]);
+    }
+    if (!drag.additive) clearSelection(curSvg);
+    addSelected(picked);
+    try { window.LCS && window.LCS.history && window.LCS.history.push('marquee-select'); }catch(_){ }
+    e.preventDefault();
+    curSvg = null;
+    rect = null;
+  }, true);
+})();
   </script>
 </body>
 </html>
