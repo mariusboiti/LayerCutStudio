@@ -178,8 +178,8 @@
  </script>
 <body>
   <div class="topbar">
-   <div class="topbar-inner">
-     <!-- logo simplu (două forme suprapuse) -->
+    <div class="topbar-inner">
+      <!-- logo simplu (două forme suprapuse) -->
      <svg class="brand-logo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
        <rect x="3" y="5" width="14" height="14" rx="3" fill="#111827"></rect>
        <rect x="7" y="3" width="14" height="14" rx="3" fill="#ef4444"></rect>
@@ -2683,6 +2683,117 @@
       <div id="lcs-status" style="font-size:12px;color:#6b7280;">Last saved: never</div>
     </div>
   </div>
+
+  <!-- Header Actions (Project / Grid / Align) -->
+  <style>
+    /* container acțiuni în bara de sus, pe dreapta */
+    #lcs-header-actions{margin-left:auto;display:flex;gap:10px;align-items:center}
+    #lcs-header-actions .hx{display:inline-flex;gap:8px;align-items:center}
+    #lcs-header-actions .btn{border:1px solid #e5e7eb;border-radius:10px;background:#fff;padding:8px 12px;cursor:pointer;font:600 12px/1 system-ui;color:#111827}
+    #lcs-header-actions .gear{display:inline-flex;align-items:center;gap:8px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;padding:8px 12px;cursor:pointer;font:600 12px/1 system-ui}
+    #lcs-header-actions .gear .ico{font-size:16px}
+    /* când align bar e mutat în header, arată-l orizontal și mic */
+    #lcs-header-actions #lcs-alignbar{position:static; box-shadow:none; border:0; padding:0; background:transparent}
+    #lcs-header-actions #lcs-alignbar .ttl{display:none}
+    #lcs-header-actions #lcs-alignbar .row{margin:0}
+    #lcs-header-actions #lcs-alignbar button{width:32px;height:32px;border-radius:8px}
+    /* ascunde panoul flotant align vechi când l-am mutat */
+    #lcs-alignbar[data-moved="1"]{display:none!important}
+    /* ascunde quickbar-ul de jos (dacă exista) ca să nu dublăm butoane */
+    #lcs-quickbar[data-disabled="1"]{display:none!important}
+  </style>
+  <script>
+  (function(){
+    if (window.__LCS_HEADER_ACTIONS__) return; window.__LCS_HEADER_ACTIONS__=true;
+    function qs(s, r){ return (r||document).querySelector(s); }
+    function qsa(s, r){ return Array.from((r||document).querySelectorAll(s)); }
+
+    function ensureHeaderActions(){
+      var topbar = qs('.topbar-inner') || qs('.topbar') || qs('header');
+      if (!topbar) return null;
+      var host = qs('#lcs-header-actions', topbar);
+      if (!host){
+        host = document.createElement('div');
+        host.id = 'lcs-header-actions';
+        topbar.appendChild(host);
+      }
+      return host;
+    }
+
+    function hideProjectPanel(){
+      // Găsește panoul „Project & autosave” și îl elimină (sau îl ascunde discret)
+      var cand = null;
+      qsa('section,div').some(function(el){
+        try{
+          var txt = (el.textContent||'').toLowerCase();
+          if (txt.includes('project') && txt.includes('autosave')){
+            // are butoanele Save/Export/Import?
+            if (txt.includes('save now') || txt.includes('export') || txt.includes('import')){
+              cand = el; return true;
+            }
+          }
+        }catch(_){ }
+        return false;
+      });
+      if (cand){
+        // înlătură total pentru a elibera spațiu
+        try{ cand.remove(); }catch(_){ cand.style.display='none'; }
+      }
+    }
+
+    function buildGear(host){
+      var gearBtn = document.createElement('button');
+      gearBtn.type = 'button';
+      gearBtn.className = 'gear';
+      gearBtn.innerHTML = '<span class="ico">⚙️</span><span>Project</span>';
+      gearBtn.addEventListener('click', function(e){
+        e.preventDefault();
+        var real = document.getElementById('lcs-gear-btn');
+        if (real && typeof real.click === 'function'){ try{ real.click(); return; }catch(_){ } }
+        try{ window.dispatchEvent(new CustomEvent('lcs:open-settings')); }catch(_){}
+      }, {capture:true});
+      host.appendChild(gearBtn);
+    }
+
+    function moveGrid(host){
+      var gridBtn = document.getElementById('grid-btn');
+      if (!gridBtn) return;
+      gridBtn.classList.add('btn');
+      host.appendChild(gridBtn);
+      var oldWrap = document.getElementById('lcs-grid-toggle');
+      if (oldWrap){ oldWrap.setAttribute('data-moved','1'); }
+    }
+
+    function moveAlignPanel(host){
+      var bar = document.getElementById('lcs-alignbar');
+      if (!bar) return;
+      host.appendChild(bar);
+      bar.setAttribute('data-moved','1');
+    }
+
+    function disableQuickbar(){
+      var qb = document.getElementById('lcs-quickbar');
+      if (qb) qb.setAttribute('data-disabled','1');
+    }
+
+    function init(){
+      var host = ensureHeaderActions(); if (!host) return;
+      hideProjectPanel();
+      buildGear(host);
+      moveGrid(host);
+      // mic spacer între butoane și align bar
+      var hx = document.createElement('div'); hx.className='hx'; host.appendChild(hx);
+      moveAlignPanel(hx);
+      disableQuickbar();
+    }
+
+    if (document.readyState === 'loading'){
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  })();
+  </script>
 </div>
 
 <script>
