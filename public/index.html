@@ -210,6 +210,26 @@
  </div>
 
  <div class="wrap">
+   <div id="lcs-project-tools" style="margin:16px auto;max-width:1200px;padding:16px;border:1px solid #d1d5db;border-radius:12px;background:#fff;box-shadow:0 1px 2px rgba(15,23,42,0.04);">
+     <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;">
+       <div style="display:flex;flex-direction:column;gap:4px;">
+         <div style="font-size:14px;font-weight:600;color:#111827;">Project &amp; autosave</div>
+         <div id="lcs-status" style="font-size:12px;color:#6b7280;">Last saved: never</div>
+       </div>
+       <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#374151;">
+         <input id="lcs-autosave" type="checkbox" style="width:16px;height:16px;" checked />
+         Autosave to browser storage (60s)
+       </label>
+     </div>
+     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
+       <button id="lcs-save" style="padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;">💾 Save now (Ctrl+S)</button>
+       <button id="lcs-load" style="padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;">⤓ Load from autosave</button>
+       <button id="lcs-export" style="padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;">⬇ Export .lcs</button>
+       <button id="lcs-export-svg" style="padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;">🧾 Export SVG for Laser</button>
+       <button id="lcs-import-btn" style="padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;">⬆ Import .lcs (Ctrl+O)</button>
+       <input id="lcs-import" type="file" accept=".lcs,application/json" style="display:none" />
+     </div>
+   </div>
     <div id="app" class="row"></div>
   </div>
   <!-- HUD eliminat (ascuns) -->
@@ -2658,6 +2678,396 @@
     window.__LCS_NORMALIZE__ = { normalizeSnapshot: normalizeSnapshot };
   })();
   </script>
+  <!-- Project persistence helpers + SVG export -->
+  <script>
+  (function(){
+    if (window.__LCS_PROJECT_PANEL__) return;
+    window.__LCS_PROJECT_PANEL__ = true;
+
+    var STORAGE_KEY = 'LayerCutStudio:autosave';
+    var AUTOSAVE_PREF_KEY = STORAGE_KEY + ':enabled';
+    var AUTOSAVE_INTERVAL = 60000;
+
+    var statusEl = document.getElementById('lcs-status');
+    var autosaveChk = document.getElementById('lcs-autosave');
+    var btnSave = document.getElementById('lcs-save');
+    var btnLoad = document.getElementById('lcs-load');
+    var btnExport = document.getElementById('lcs-export');
+    var btnExportSVG = document.getElementById('lcs-export-svg');
+    var btnImportBtn = document.getElementById('lcs-import-btn');
+    var inputImport = document.getElementById('lcs-import');
+
+    var autosaveEnabled = true;
+    var autosaveTimer = null;
+
+    function setStatusMessage(msg){
+      if (statusEl) statusEl.textContent = msg;
+    }
+
+    function formatTimestamp(ts){
+      var d = new Date(ts);
+      if (isNaN(d.getTime())) return null;
+      try { return d.toLocaleString(); } catch(_){ return d.toISOString(); }
+    }
+
+    function setStatusFromTs(ts, suffix){
+      if (!statusEl) return;
+      if (!ts){
+        statusEl.textContent = 'Last saved: never';
+        return;
+      }
+      var label = formatTimestamp(ts);
+      if (!label){
+        statusEl.textContent = 'Last saved: unknown';
+        return;
+      }
+      statusEl.textContent = 'Last saved: ' + label + (suffix ? ' ' + suffix : '');
+    }
+
+    function getSnapshotSafe(){
+      try {
+        if (typeof window.getSnapshot !== 'function') return null;
+        var snap = window.getSnapshot();
+        if (!snap || typeof snap !== 'object') return null;
+        if (typeof structuredClone === 'function') return structuredClone(snap);
+        return JSON.parse(JSON.stringify(snap));
+      } catch (e) {
+        console.warn('[LCS] getSnapshot failed', e);
+        return null;
+      }
+    }
+
+    function clearAutosaveTimer(){
+      if (autosaveTimer){
+        clearTimeout(autosaveTimer);
+        autosaveTimer = null;
+      }
+    }
+
+    function autosaveLoop(){
+      clearAutosaveTimer();
+      if (!autosaveEnabled) return;
+      autosaveTimer = setTimeout(function(){
+        saveToLocal({ silent:true, tag:'autosave', restart:false });
+        autosaveLoop();
+      }, AUTOSAVE_INTERVAL);
+    }
+
+    function restartAutosaveLoop(){
+      clearAutosaveTimer();
+      if (autosaveEnabled) autosaveLoop();
+    }
+
+    function readSavedStatus(){
+      try {
+        var raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw){
+          setStatusFromTs(null);
+          return;
+        }
+        var data = JSON.parse(raw);
+        if (data && typeof data.t === 'number') setStatusFromTs(data.t);
+        else setStatusFromTs(null);
+      } catch (e) {
+        console.warn('[LCS] read autosave failed', e);
+        setStatusMessage('Last saved: storage unavailable');
+      }
+    }
+
+    function saveToLocal(opts){
+      opts = opts || {};
+      var snap = getSnapshotSafe();
+      if (!snap){
+        if (!opts.silent) setStatusMessage('Last saved: unavailable (no snapshot)');
+        return false;
+      }
+      var payload = { t: Date.now(), v: 1, snap: snap };
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      } catch (e) {
+        console.warn('[LCS] save failed', e);
+        if (!opts.silent) alert('Save failed. Unable to access localStorage.');
+        setStatusMessage('Last saved: storage error');
+        return false;
+      }
+      var suffix = '';
+      if (opts.suffix) suffix = opts.suffix;
+      else if (opts.tag) suffix = '(' + opts.tag + ')';
+      setStatusFromTs(payload.t, suffix);
+      if (opts.restart !== false) restartAutosaveLoop();
+      try {
+        window.dispatchEvent(new CustomEvent('lcs:saved', { detail:{ ts: payload.t, reason: opts.tag || 'manual' } }));
+      } catch(_){ }
+      return true;
+    }
+
+    function cloneSnapshot(snap){
+      if (!snap || typeof snap !== 'object') return null;
+      try {
+        return (typeof structuredClone === 'function') ? structuredClone(snap) : JSON.parse(JSON.stringify(snap));
+      } catch (e) {
+        console.warn('[LCS] clone snapshot fallback', e);
+        try { return JSON.parse(JSON.stringify(snap)); } catch(_){ return snap; }
+      }
+    }
+
+    function applySnapshotData(snap, tag){
+      if (!snap || typeof snap !== 'object') throw new Error('Snapshot missing');
+      if (typeof window.applySnapshot !== 'function') throw new Error('applySnapshot unavailable');
+      var copy = cloneSnapshot(snap);
+      window.applySnapshot(copy);
+      var ts = Date.now();
+      setStatusFromTs(ts, tag ? '(' + tag + ')' : '(imported)');
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ t: ts, v: 1, snap: copy }));
+      } catch (e) {
+        console.warn('[LCS] store imported snapshot failed', e);
+      }
+      restartAutosaveLoop();
+      return true;
+    }
+
+    function importSnapshotPayload(raw, opts){
+      opts = opts || {};
+      if (!raw) throw new Error('Empty payload');
+      if (typeof Blob !== 'undefined' && raw instanceof Blob){
+        var reader = new FileReader();
+        reader.onload = function(){
+          try {
+            importSnapshotPayload(reader.result, opts);
+          } catch (err) {
+            console.warn('[LCS] import failed', err);
+            alert('Import failed: ' + (err && err.message ? err.message : 'invalid file'));
+          }
+        };
+        reader.onerror = function(){
+          alert('Import failed. Could not read file.');
+        };
+        reader.readAsText(raw);
+        return true;
+      }
+      var data = raw;
+      if (typeof raw === 'string'){
+        data = JSON.parse(raw);
+      }
+      if (data && typeof data === 'object'){
+        var snap = data.snap || data.snapshot || data.data || data.snapShot || data;
+        return applySnapshotData(snap, opts.tag || 'imported');
+      }
+      throw new Error('Unsupported snapshot payload');
+    }
+
+    function loadFromLocal(){
+      var raw;
+      try {
+        raw = localStorage.getItem(STORAGE_KEY);
+      } catch (e) {
+        alert('Cannot access autosave storage.');
+        return;
+      }
+      if (!raw){
+        alert('No autosave found.');
+        return;
+      }
+      var data;
+      try { data = JSON.parse(raw); }
+      catch(_){ alert('Autosave data is corrupted.'); return; }
+      var snap = data && (data.snap || data.snapshot || data.data);
+      if (!snap || typeof snap !== 'object'){ alert('Autosave snapshot missing.'); return; }
+      try {
+        applySnapshotData(snap, 'loaded');
+        if (typeof window.pushHistory === 'function'){
+          try { window.pushHistory('load-autosave'); } catch(_){ }
+        }
+      } catch (e) {
+        console.warn('[LCS] load autosave failed', e);
+        alert('Failed to apply autosave snapshot.');
+      }
+    }
+
+    function exportFile(){
+      try {
+        var snap = getSnapshotSafe();
+        if (!snap){
+          alert('Nothing to export yet.');
+          return;
+        }
+        var data = { t: Date.now(), v: 1, snap: snap };
+        var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'layercut-project.lcs';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 0);
+      } catch (e) {
+        console.warn('[LCS] export failed', e);
+        alert('Export failed. See console for details.');
+      }
+    }
+
+    function exportSVGForLaser(){
+      try {
+        var unit = 'mm';
+        try {
+          var snap = (typeof window.getSnapshot === 'function') ? window.getSnapshot() : null;
+          if (snap && typeof snap.unit === 'string') unit = snap.unit;
+        } catch(_){ }
+        unit = (unit === 'in' || unit === 'inch' || unit === 'inches') ? 'in' : 'mm';
+        var PX_TO_MM = 25.4 / 96;
+        var PX_TO_IN = 1 / 96;
+        var px2u = unit === 'in' ? PX_TO_IN : PX_TO_MM;
+
+        var svgs = Array.from(document.querySelectorAll('svg'));
+        if (!svgs.length){ alert('No SVG found to export.'); return; }
+        function areaOf(svg){
+          var vb = (svg.getAttribute('viewBox')||'').trim().split(/\s+/).map(Number);
+          if (vb.length === 4 && vb.every(function(n){ return Number.isFinite(n); })) return Math.abs(vb[2] * vb[3]);
+          var r = svg.getBoundingClientRect();
+          return Math.abs((r.width||0) * (r.height||0));
+        }
+        var main = svgs.slice().sort(function(a,b){ return areaOf(b) - areaOf(a); })[0];
+        if (!main){ alert('No SVG found to export.'); return; }
+        var clone = main.cloneNode(true);
+
+        var removeSel = '[data-export="false"],[data-export=false],.grid,.guide,.guides,.handle,.handles,.selection,.ui';
+        try {
+          clone.querySelectorAll(removeSel).forEach(function(el){ el.remove(); });
+        } catch(_){ }
+
+        var vbAttr = (main.getAttribute('viewBox')||'').trim();
+        var vbParts = vbAttr ? vbAttr.split(/\s+/).map(Number) : [];
+        var w = 0, h = 0;
+        if (vbParts.length === 4 && vbParts.every(function(n){ return Number.isFinite(n); })){
+          w = vbParts[2];
+          h = vbParts[3];
+          clone.setAttribute('viewBox', vbParts.join(' '));
+        } else {
+          try {
+            var bb = main.getBBox();
+            if (bb && Number.isFinite(bb.width) && Number.isFinite(bb.height)){
+              w = bb.width;
+              h = bb.height;
+              clone.setAttribute('viewBox', [bb.x, bb.y, bb.width, bb.height].join(' '));
+            }
+          } catch(_){ }
+        }
+        if (w > 0 && h > 0){
+          clone.setAttribute('width', (w * px2u).toFixed(3) + unit);
+          clone.setAttribute('height', (h * px2u).toFixed(3) + unit);
+        } else {
+          clone.removeAttribute('width');
+          clone.removeAttribute('height');
+        }
+
+        clone.querySelectorAll('*').forEach(function(el){
+          try {
+            var sw = el.getAttribute && el.getAttribute('stroke-width');
+            if (sw && /^-?\d+(\.\d+)?/.test(sw)){
+              var val = parseFloat(sw);
+              if (Number.isFinite(val)) el.setAttribute('stroke-width', (val * px2u).toFixed(3) + unit);
+            }
+            var tag = (el.tagName||'').toLowerCase();
+            if (tag === 'path'){
+              if (!el.getAttribute('stroke-linejoin')) el.setAttribute('stroke-linejoin','round');
+              if (!el.getAttribute('stroke-linecap')) el.setAttribute('stroke-linecap','round');
+            }
+          } catch(_){ }
+        });
+
+        var xmlHead = '<?xml version="1.0" encoding="UTF-8"?>\n';
+        var meta = '<!-- Exported by LayerCut Studio • unit=' + unit + ' • ' + new Date().toISOString() + ' -->\n';
+        var serializer = new XMLSerializer();
+        var svgString = serializer.serializeToString(clone);
+        if (!/xmlns=/.test(svgString)) svgString = svgString.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+        var blob = new Blob([xmlHead + meta + svgString], { type: 'image/svg+xml' });
+        var url = URL.createObjectURL(blob);
+        var link = document.createElement('a');
+        link.href = url;
+        link.download = 'layercut-export.svg';
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(function(){ URL.revokeObjectURL(url); link.remove(); }, 0);
+      } catch (e) {
+        console.warn('[LCS] exportSVG failed', e);
+        alert('Export SVG failed. See console for details.');
+      }
+    }
+
+    function handleFileInput(ev){
+      try {
+        var file = ev && ev.target && ev.target.files ? ev.target.files[0] : null;
+        if (file) importSnapshotPayload(file, { tag:'imported' });
+      } catch(e){
+        console.warn('[LCS] import handler failed', e);
+      } finally {
+        if (ev && ev.target) ev.target.value = '';
+      }
+    }
+
+    function setAutosave(flag){
+      autosaveEnabled = !!flag;
+      if (autosaveChk) autosaveChk.checked = autosaveEnabled;
+      try { localStorage.setItem(AUTOSAVE_PREF_KEY, autosaveEnabled ? '1' : '0'); } catch(_){ }
+      if (autosaveEnabled) restartAutosaveLoop();
+      else clearAutosaveTimer();
+    }
+
+    // Hook buttons
+    if (btnSave) btnSave.onclick = function(){ saveToLocal(); };
+    if (btnLoad) btnLoad.onclick = function(){ loadFromLocal(); };
+    if (btnExport) btnExport.onclick = exportFile;
+    if (btnExportSVG) btnExportSVG.onclick = exportSVGForLaser;
+    if (btnImportBtn) btnImportBtn.onclick = function(){ if (inputImport) inputImport.click(); };
+    if (inputImport) inputImport.addEventListener('change', handleFileInput);
+    if (autosaveChk) autosaveChk.addEventListener('change', function(){ setAutosave(autosaveChk.checked); });
+
+    // Keyboard shortcuts (Ctrl+S / Ctrl+O)
+    window.addEventListener('keydown', function(e){
+      if (!e) return;
+      if (!e.ctrlKey && !e.metaKey) return;
+      var key = (e.key||'').toLowerCase();
+      if (key === 's'){
+        e.preventDefault();
+        saveToLocal();
+      } else if (key === 'o'){
+        e.preventDefault();
+        if (inputImport) inputImport.click();
+      }
+    }, { passive:false });
+
+    window.addEventListener('beforeunload', function(){
+      if (autosaveEnabled) saveToLocal({ silent:true, tag:'autosave', restart:false });
+    });
+
+    // Initial state
+    (function(){
+      var pref = null;
+      try { pref = localStorage.getItem(AUTOSAVE_PREF_KEY); } catch(_){ }
+      if (pref === '0') autosaveEnabled = false;
+      else if (pref === '1') autosaveEnabled = true;
+      if (autosaveChk) autosaveChk.checked = autosaveEnabled;
+    })();
+
+    readSavedStatus();
+    if (autosaveEnabled) autosaveLoop();
+
+    var api = window.LCS_Project || {};
+    api.saveToLocal = saveToLocal;
+    api.loadFromLocal = loadFromLocal;
+    api.export = exportFile;
+    api.exportSVG = exportSVGForLaser;
+    api.importFile = function(payload){
+      try { return importSnapshotPayload(payload, { tag:'imported' }); }
+      catch(e){ console.warn('[LCS] importFile failed', e); return false; }
+    };
+    api.setAutosave = function(v){ setAutosave(v); };
+    api.isAutosave = function(){ return !!autosaveEnabled; };
+    api.getSnapshotSafe = getSnapshotSafe;
+    window.LCS_Project = api;
+  })();
+  </script>
   <!-- Outline smoothing: enforce round joins/caps + safe offset options -->
   <script>
   (function(){
@@ -3034,6 +3444,7 @@
       { title:'Save project (localStorage)', hint:'Ctrl+S', action:function(){ window.LCS_Project && window.LCS_Project.saveToLocal(); } },
       { title:'Load autosave', action:function(){ window.LCS_Project && window.LCS_Project.loadFromLocal(); } },
       { title:'Export .lcs', action:function(){ window.LCS_Project && window.LCS_Project.export(); } },
+      { title:'Export SVG for Laser', action:function(){ window.LCS_Project && window.LCS_Project.exportSVG && window.LCS_Project.exportSVG(); } },
       { title:'Import .lcs', hint:'Ctrl+O', action:function(){ var el=document.getElementById('lcs-import'); if(el) el.click(); } },
       { title:'Zoom: reset to 100%', action:function(){ try{ var s=window.getSnapshot(); s.zoom=1; window.applySnapshot(s); window.LCS && window.LCS.history && window.LCS.history.push('zoom-reset'); }catch(_){} } },
       { title:'Unit: toggle mm/in', action:function(){ try{ var s=window.getSnapshot(); s.unit=(s.unit==='mm'?'in':'mm'); window.applySnapshot(s); window.LCS && window.LCS.history && window.LCS.history.push('unit-toggle'); }catch(_){} } },
