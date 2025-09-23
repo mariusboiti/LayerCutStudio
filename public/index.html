@@ -3808,10 +3808,12 @@
 })();
 </script>
 
-<!-- Marquee Selection (drag to select multiple) – fixed for re-renders -->
+<!-- Marquee Selection (drag to select multiple) – style -->
 <style>
   svg .selected { outline: none; }
 </style>
+
+<!-- Marquee Selection (drag to select multiple) – fixed for re-renders -->
 <script>
 (function(){
   if (window.__LCS_MARQUEE__) return; window.__LCS_MARQUEE__ = true;
@@ -3908,51 +3910,36 @@
     e.preventDefault();
   }, true);
 })();
-  </script>
-<!-- Marquee Selection (drag to select multiple) – style -->
-<style>
-  /* doar pentru highlight vizual al selecției existente (dacă nu ai deja) */
-  svg .selected { outline: none; }
-</style>
+</script>
 
 <!-- BOOT: start with empty canvas (wipe default demo once per page load) -->
 <script>
 (function(){
   if (window.__LCS_BOOT_EMPTY__) return; window.__LCS_BOOT_EMPTY__=true;
-  // pornește o singură dată pe sesiune (tab)
   if (sessionStorage.getItem('LCS:bootCleared')==='1') return;
-
   function mainSVG(){
     var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
     a.sort(function(A,B){
-      function ar(x){
-        var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
-        if(vb.length===4&&vb.every(isFinite)) return vb[2]*vb[3];
-        var r=x.getBoundingClientRect(); return r.width*r.height||0;
-      }
+      function ar(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
+        if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3]; var r=x.getBoundingClientRect(); return r.width*r.height||0}
       return ar(B)-ar(A);
     });
     return a[0];
   }
-
   function wipe(svg){
     if (!svg) return false;
     var keep = {defs:1,title:1,desc:1,metadata:1,clipPath:1,mask:1,pattern:1,linearGradient:1,radialGradient:1};
-    // păstrăm doar defs/metadata; golim restul
     [].slice.call(svg.childNodes).forEach(function(n){
-      if (n.nodeType!==1) return; // element nodes
+      if (n.nodeType!==1) return;
       var t=(n.tagName||'').toLowerCase();
       if (!keep[t]) { try{ n.remove(); }catch(_){} }
     });
-    // creăm un strat "root" gol pentru app
     var g=document.createElementNS('http://www.w3.org/2000/svg','g');
     g.setAttribute('class','lcs-root'); g.setAttribute('data-export','true');
     svg.appendChild(g);
     try{ window.LCS && window.LCS.history && window.LCS.history.push('boot-clear'); }catch(_){}
     return true;
   }
-
-  // așteaptă până când React a montat SVG-ul
   var tries=0;
   (function tick(){
     var svg = mainSVG();
@@ -3960,149 +3947,81 @@
       sessionStorage.setItem('LCS:bootCleared','1');
       return;
     }
-    if (++tries<120) return setTimeout(tick, 50); // până la ~6s
+    if (++tries<120) return setTimeout(tick, 50);
   })();
 })();
 </script>
 
-<!-- Marquee Selection (drag to select multiple) – fixed for re-renders -->
+<!-- Grid overlay (non-export), toggle Ctrl+' -->
+<style>
+  #lcs-grid-toggle{position:fixed;left:16px;bottom:84px;z-index:99990;background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.15);padding:6px}
+  #lcs-grid-toggle button{border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:6px 10px;cursor:pointer}
+</style>
+<div id="lcs-grid-toggle"><button id="grid-btn" title="Toggle grid (Ctrl+')"># Grid</button></div>
 <script>
 (function(){
-  if (window.__LCS_MARQUEE__) return; window.__LCS_MARQUEE__ = true;
-
-  function mainSVG(){
-    var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
-    a.sort(function(A,B){
-      function area(x){
-        var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
-        if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];
-        var r=x.getBoundingClientRect(); return r.width*r.height||0;
-      }
-      return area(B)-area(A);
-    });
-    return a[0];
+  if (window.__LCS_GRID__) return; window.__LCS_GRID__=true;
+  function svg(){ var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null; a.sort(function(A,B){function ar(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];var r=x.getBoundingClientRect();return r.width*r.height||0} return ar(B)-ar(A)}); return a[0] }
+  function unit(){ var u=((window.getSnapshot&&window.getSnapshot())||{}).unit||'mm'; return (u==='inches'||u==='inch')?'in':u }
+  function ensureGroup(){
+    var sv=svg(); if(!sv) return null;
+    var g=sv.querySelector('g.lcs-grid-layer'); if(g) return g;
+    g=document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.setAttribute('class','grid lcs-grid-layer'); g.setAttribute('data-export','false'); g.setAttribute('pointer-events','none');
+    sv.insertBefore(g, sv.firstChild);
+    return g;
   }
-
-  function svgPoint(svg, clientX, clientY){
-    var pt = svg.createSVGPoint(); pt.x = clientX; pt.y = clientY;
-    var m = svg.getScreenCTM(); if (!m) return {x:clientX,y:clientY};
-    var p = pt.matrixTransform(m.inverse()); return {x:p.x, y:p.y};
-  }
-
-  function ensureMarqueeRect(svg){
-    var g = svg.querySelector('g.lcs-marquee');
-    if (!g){
-      g = document.createElementNS('http://www.w3.org/2000/svg','g');
-      g.setAttribute('class','lcs-marquee');
-      svg.appendChild(g);
+  function draw(){
+    var sv=svg(); if(!sv) return;
+    var g=ensureGroup(); if(!g) return;
+    while(g.firstChild) g.removeChild(g.firstChild);
+    var vb=(sv.getAttribute('viewBox')||'').split(/\s+/).map(Number);
+    var x=0,y=0,w=0,h=0; if(vb.length===4&&vb.every(isFinite)){x=vb[0];y=vb[1];w=vb[2];h=vb[3];} else {var bb=sv.getBBox(); x=bb.x;y=bb.y;w=bb.width;h=bb.height;}
+    var u=unit();
+    var stepPx = (u==='in') ? (96/2) : (96/25.4*10); // 0.5in sau 10mm
+    var minor = stepPx/5;
+    for(var X=Math.floor(x/minor)*minor; X<=x+w; X+=minor){
+      var l=document.createElementNS('http://www.w3.org/2000/svg','line');
+      l.setAttribute('x1',X); l.setAttribute('y1',y);
+      l.setAttribute('x2',X); l.setAttribute('y2',y+h);
+      l.setAttribute('stroke','#e5e7eb'); l.setAttribute('stroke-width','0.6');
+      g.appendChild(l);
     }
-    var r = g.querySelector('#lcs-marquee-rect');
-    if (!r){
-      r = document.createElementNS('http://www.w3.org/2000/svg','rect');
-      r.setAttribute('id','lcs-marquee-rect');
-      r.setAttribute('fill','#3b82f6');
-      r.setAttribute('fill-opacity','0.12');
-      r.setAttribute('stroke','#3b82f6');
-      r.setAttribute('stroke-width','1');
-      r.setAttribute('stroke-dasharray','4,3');
-      r.setAttribute('pointer-events','none');
-      r.setAttribute('visibility','hidden');
-      g.appendChild(r);
+    for(var Y=Math.floor(y/minor)*minor; Y<=y+h; Y+=minor){
+      var l=document.createElementNS('http://www.w3.org/2000/svg','line');
+      l.setAttribute('x1',x); l.setAttribute('y1',Y);
+      l.setAttribute('x2',x+w); l.setAttribute('y2',Y);
+      l.setAttribute('stroke','#e5e7eb'); l.setAttribute('stroke-width','0.6');
+      g.appendChild(l);
     }
-    return r;
-  }
-
-  function selectableNodes(svg){
-    var list = [].slice.call(svg.querySelectorAll('path,rect,circle,ellipse,polygon,polyline,g'));
-    return list.filter(function(n){
-      var tn = (n.tagName||'').toLowerCase();
-      if (tn==='svg'||tn==='defs'||tn==='clippath'||tn==='title'||tn==='desc') return false;
-      if (n.closest('defs')) return false;
-      return true;
-    });
-  }
-
-  function bboxOf(el){
-    try{ var b = el.getBBox(); return {x:b.x,y:b.y,width:b.width,height:b.height}; }catch(_){ return null; }
-  }
-  function rectsOverlap(a,b){
-    return a && b &&
-      (a.x < b.x + b.width) && (a.x + a.width > b.x) &&
-      (a.y < b.y + b.height) && (a.y + a.height > b.y);
-  }
-  function normalizeRect(x1,y1,x2,y2){
-    var x = Math.min(x1,x2), y=Math.min(y1,y2);
-    return {x:x,y:y,width:Math.abs(x2-x1),height:Math.abs(y2-y1)};
-  }
-
-  function clearSelection(svg){
-    [].slice.call(svg.querySelectorAll('[data-selected="1"],.selected')).forEach(function(n){
-      n.removeAttribute('data-selected'); n.classList.remove('selected');
-    });
-  }
-  function addSelected(nodes){
-    nodes.forEach(function(n){ n.setAttribute('data-selected','1'); n.classList.add('selected'); });
-  }
-  function canStartMarquee(e, svg){
-    // începe pe fundal sau dacă e ținut ALT
-    if (e.altKey) return true;
-    return e.target === svg;
-  }
-
-  var curSvg = null;
-  var rect = null;
-  var drag = {active:false, start:{x:0,y:0}, additive:false, forced:false};
-
-  document.addEventListener('mousedown', function(e){
-    if (e.button!==0) return; // doar click stânga
-    // svg curent = cel mai apropiat de target sau cel mai mare din pagină
-    curSvg = (e.target && e.target.closest && e.target.closest('svg')) || mainSVG();
-    if (!curSvg) return;
-    if (!canStartMarquee(e, curSvg) && e.target!==curSvg) return;
-    rect = ensureMarqueeRect(curSvg);
-    var p = svgPoint(curSvg, e.clientX, e.clientY);
-    drag.active = true; drag.start = p;
-    drag.additive = !!(e.shiftKey || e.ctrlKey || e.metaKey);
-    drag.forced = !!e.altKey;
-    rect.setAttribute('x', p.x); rect.setAttribute('y', p.y);
-    rect.setAttribute('width', 0); rect.setAttribute('height', 0);
-    rect.setAttribute('visibility','visible');
-    e.preventDefault();
-  }, true);
-
-  window.addEventListener('mousemove', function(e){
-    if (!drag.active) return;
-    if (!curSvg || !rect) return;
-    var p = svgPoint(curSvg, e.clientX, e.clientY);
-    var r = normalizeRect(drag.start.x, drag.start.y, p.x, p.y);
-    rect.setAttribute('x', r.x); rect.setAttribute('y', r.y);
-    rect.setAttribute('width', r.width); rect.setAttribute('height', r.height);
-    e.preventDefault();
-  }, true);
-
-  window.addEventListener('mouseup', function(e){
-    if (!drag.active) return;
-    if (!curSvg || !rect) return;
-    var end = svgPoint(curSvg, e.clientX, e.clientY);
-    var selRect = normalizeRect(drag.start.x, drag.start.y, end.x, end.y);
-    rect.setAttribute('visibility','hidden');
-    drag.active = false;
-
-    // calculează selecția
-    var candidates = selectableNodes(curSvg);
-    var picked = [];
-    for (var i=0;i<candidates.length;i++){
-      var bb = bboxOf(candidates[i]); if (!bb) continue;
-      if (rectsOverlap(selRect, bb)) picked.push(candidates[i]);
+    for(var X=Math.floor(x/stepPx)*stepPx; X<=x+w; X+=stepPx){
+      var l=document.createElementNS('http://www.w3.org/2000/svg','line');
+      l.setAttribute('x1',X); l.setAttribute('y1',y);
+      l.setAttribute('x2',X); l.setAttribute('y2',y+h);
+      l.setAttribute('stroke','#c7cdd4'); l.setAttribute('stroke-width','1');
+      g.appendChild(l);
     }
-    if (!drag.additive) clearSelection(curSvg);
-    addSelected(picked);
-    try { window.LCS && window.LCS.history && window.LCS.history.push('marquee-select'); }catch(_){ }
-    e.preventDefault();
-    curSvg = null;
-    rect = null;
-  }, true);
+    for(var Y=Math.floor(y/stepPx)*stepPx; Y<=y+h; Y+=stepPx){
+      var l=document.createElementNS('http://www.w3.org/2000/svg','line');
+      l.setAttribute('x1',x); l.setAttribute('y1',Y);
+      l.setAttribute('x2',x+w); l.setAttribute('y2',Y);
+      l.setAttribute('stroke','#c7cdd4'); l.setAttribute('stroke-width','1');
+      g.appendChild(l);
+    }
+  }
+  function toggle(){
+    var g=ensureGroup(); if(!g) return;
+    var vis = g.getAttribute('display')==='none' ? '' : 'none';
+    g.setAttribute('display', vis);
+  }
+  document.getElementById('grid-btn').onclick = function(){ draw(); toggle(); };
+  window.addEventListener('keydown', function(e){
+    var k=e.key||''; if((e.ctrlKey||e.metaKey) && (k==="'" || k==='’')){ e.preventDefault(); draw(); toggle(); }
+  }, {passive:false});
+  window.addEventListener('lcs:state-applied', function(){ var g=document.querySelector('g.lcs-grid-layer'); if(g && g.getAttribute('display')!=='none'){ draw(); } });
+  window.addEventListener('lcs:zoom-changed', function(){ var g=document.querySelector('g.lcs-grid-layer'); if(g && g.getAttribute('display')!=='none'){ draw(); } });
 })();
+
   </script>
 </body>
 </html>
