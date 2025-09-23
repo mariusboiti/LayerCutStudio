@@ -3093,5 +3093,69 @@
     }, {passive:false});
   })();
   </script>
+  <!-- Nudge selection with arrows (state-first, DOM fallback) -->
+  <script>
+  (function(){
+    if (window.__LCS_NUDGE__) return; window.__LCS_NUDGE__=true;
+    function isEditable(el){ if(!el) return false; var t=(el.tagName||'').toLowerCase(); return ['input','textarea','select'].includes(t)||!!el.isContentEditable; }
+    function selectedIdsFromState(){
+      try{
+        if (typeof window.getSnapshot!=='function') return [];
+        var s=window.getSnapshot()||{};
+        var sel = Array.isArray(s.selection) ? s.selection : (s.selection ? [s.selection] : []);
+        return sel;
+      }catch(_){ return [] }
+    }
+    function selectedDom(){
+      var els=[].slice.call(document.querySelectorAll('[data-selected="1"],[aria-selected="true"],.selected'));
+      if (els.length) return els;
+      var ids = selectedIdsFromState();
+      ids.forEach(function(id){
+        var el=document.querySelector('[data-lcs-id="'+id+'"],[data-id="'+id+'"],#'+CSS.escape(id));
+        if (el) els.push(el);
+      });
+      return els;
+    }
+    function nudgeState(dx,dy){
+      try{
+        if (typeof window.getSnapshot!=='function' || typeof window.applySnapshot!=='function') return false;
+        var s=window.getSnapshot()||{}, ids=selectedIdsFromState(); if(!ids.length) return false;
+        var moved=0;
+        function touchList(arr){ if(!Array.isArray(arr)) return; arr.forEach(function(o){ var id=o&&(o.id||o.key||o.uuid); if(id&&ids.includes(id)){ if(typeof o.x==='number') {o.x+=dx; moved++;} if(typeof o.y==='number'){o.y+=dy; moved++;} } }); }
+        touchList(s.stickers); touchList(s.layers);
+        if (!moved) return false;
+        window.applySnapshot(s);
+        try{ window.LCS && window.LCS.history && window.LCS.history.push('nudge'); }catch(_){}
+        return true;
+      }catch(_){ return false; }
+    }
+    function parseTransform(tr){
+      tr=tr||''; var m=tr.match(/translate\(([^)]+)\)/i);
+      if(!m) return {tx:0,ty:0,rest:tr};
+      var parts=m[1].split(/[, ]+/).map(Number); return {tx:parts[0]||0,ty:parts[1]||0,rest:tr.replace(m[0],'').trim()};
+    }
+    function setTranslate(el,dx,dy){
+      var t=parseTransform(el.getAttribute('transform')); var ntx=(t.tx||0)+dx, nty=(t.ty||0)+dy;
+      var rest=t.rest ? (t.rest+' ') : ''; el.setAttribute('transform', rest+'translate('+ntx+','+nty+')');
+    }
+    function nudgeDom(dx,dy){
+      var els=selectedDom(); if(!els.length) return;
+      els.forEach(function(el){ setTranslate(el, dx, dy); });
+      try{ window.LCS && window.LCS.history && window.LCS.history.push('nudge'); }catch(_){}
+    }
+    window.addEventListener('keydown', function(e){
+      if (isEditable(e.target)) return;
+      var k=(e.key||'').toLowerCase(); var dx=0,dy=0;
+      var step = e.shiftKey ? 10 : 1;
+      if (k==='arrowleft')  dx=-step;
+      else if(k==='arrowright') dx= step;
+      else if(k==='arrowup')    dy=-step;
+      else if(k==='arrowdown')  dy= step;
+      else return;
+      e.preventDefault();
+      if (!nudgeState(dx,dy)) nudgeDom(dx,dy);
+    }, {passive:false});
+  })();
+  </script>
 </body>
 </html>
