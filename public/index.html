@@ -3894,8 +3894,8 @@
 
 <!-- Grid overlay (non-export), toggle Ctrl+' -->
 <style>
-  /* Quickbar container în dreapta-jos */
-  #lcs-quickbar{position:fixed;right:16px;bottom:16px;z-index:99992;display:flex;gap:8px;align-items:center}
+  /* Quickbar container – poziție controlată din JS */
+  #lcs-quickbar{position:fixed;z-index:99992;display:flex;gap:8px;align-items:center;pointer-events:auto}
   #lcs-quickbar [data-quick]{border:1px solid #e5e7eb;border-radius:10px;background:#fff;padding:8px 12px;cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,.15);font:600 12px/1 system-ui;color:#111827}
   #lcs-quickbar .gear{width:40px;height:40px;border-radius:9999px;display:inline-flex;align-items:center;justify-content:center;font-size:18px}
   /* păstrăm stilul vechi pentru fallback, dar îl ascundem când quickbar este prezent */
@@ -3908,7 +3908,7 @@
 <!-- Instanța veche (fallback; o vom muta în quickbar prin JS) -->
 <div id="lcs-grid-toggle" data-export="false"><button id="grid-btn" title="Toggle grid (Ctrl+')"># Grid</button></div>
 
-<!-- Quickbar wiring: mută ⚙️ + #Grid în dreapta-jos -->
+<!-- Quickbar wiring: mută ⚙️ + #Grid și lipește-le de bannerul negru (zoom slider: Fit / 100%) -->
 <script>
 (function(){
   if (window.__LCS_QUICKBAR__) return; window.__LCS_QUICKBAR__=true;
@@ -3952,6 +3952,75 @@
       }, {capture:true});
       qb.appendChild(proxy);
     }
+  }catch(_){ }
+
+  // 3) Lipește quickbar-ul de bannerul negru cu slider „Fit / 100%”
+  function findZoomBanner(){
+    // căutăm un container care are text „Fit” și „100%” și conține un slider
+    var cand = [];
+    document.querySelectorAll('div,section,aside').forEach(function(el){
+      try{
+        var txt = (el.textContent||'').toLowerCase();
+        if (txt.includes('fit') && txt.includes('100%')){
+          var hasSlider = el.querySelector('[role="slider"], input[type="range"]');
+          if (hasSlider){
+            cand.push(el);
+          }
+        }
+      }catch(_){ }
+    });
+    // fallback: aria-label aproximativ „zoom”
+    if (!cand.length){
+      document.querySelectorAll('[aria-label]').forEach(function(el){
+        var v=(el.getAttribute('aria-label')||'').toLowerCase();
+        if (v.includes('zoom')) cand.push(el);
+      });
+    }
+    // returnează cel mai din dreapta-jos (probabil panoul vizat)
+    if (!cand.length) return null;
+    cand.sort(function(a,b){
+      var ra=a.getBoundingClientRect(), rb=b.getBoundingClientRect();
+      // prioritate: mai jos și mai la dreapta
+      return (rb.bottom+rb.right) - (ra.bottom+ra.right);
+    });
+    return cand[0];
+  }
+  function placeNear(target){
+    if (!target || !qb) return;
+    var r = target.getBoundingClientRect();
+    // poziționează quickbar-ul IMEDIAT la stânga bannerului negru, aliniat pe partea de jos
+    // gap = 12px
+    var gap = 12;
+    // măsurăm lățimea/înălțimea quickbar-ului (temporar îl arătăm dacă e invizibil)
+    var prevVis = qb.style.visibility;
+    var prevDisplay = qb.style.display;
+    qb.style.visibility = 'hidden';
+    qb.style.display = 'flex';
+    var w = qb.offsetWidth, h = qb.offsetHeight;
+    qb.style.visibility = prevVis || '';
+    qb.style.display = prevDisplay || '';
+    // calculează poziția
+    var left = Math.max(8, r.left - w - gap);
+    var top = Math.min(window.innerHeight - h - 8, r.bottom - h);
+    // setează poziția
+    qb.style.left = left + 'px';
+    qb.style.top = top + 'px';
+    qb.style.right = '';
+    qb.style.bottom = '';
+  }
+  function tickPlace(){
+    var z = findZoomBanner();
+    if (z){ placeNear(z); }
+  }
+  // rulează la load, resize și când layoutul se schimbă
+  tickPlace();
+  window.addEventListener('resize', tickPlace, {passive:true});
+  // mic observer pentru mutări de layout (ex: toolbar align deschis/închis)
+  try{
+    var mo = new MutationObserver(function(){ tickPlace(); });
+    mo.observe(document.body, {subtree:true, childList:true, attributes:true});
+    // oprim după 10s ca să nu coste; poziția se reface la resize/orice schimbare mare
+    setTimeout(function(){ try{ mo.disconnect(); }catch(_){ } }, 10000);
   }catch(_){ }
 })();
 </script>
