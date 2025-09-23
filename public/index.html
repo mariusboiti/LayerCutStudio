@@ -3713,194 +3713,396 @@
     }, {passive:false});
   })();
   </script>
-  <!-- Zoom UI + keyboard -->
-  <style>
-    #lcs-zoom {position:fixed;right:16px;bottom:140px;z-index:99990;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.15);padding:6px;display:flex;gap:6px;align-items:center}
-    #lcs-zoom button{width:34px;height:34px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;cursor:pointer;font:600 14px/1 system-ui}
-    #lcs-zoom .val{min-width:58px;text-align:center;font:600 12px/1 system-ui;color:#111827}
-  </style>
-  <div id="lcs-zoom" title="Zoom">
-    <button id="z-out" aria-label="Zoom out">−</button>
-    <div class="val" id="z-val">100%</div>
-    <button id="z-in" aria-label="Zoom in">+</button>
-    <button id="z-reset" aria-label="Reset zoom">100%</button>
-  </div>
-  <script>
-  (function(){
-    if (window.__LCS_ZOOM_UI__) return; window.__LCS_ZOOM_UI__=true;
-    var elV=document.getElementById('z-val'), btnIn=document.getElementById('z-in'), btnOut=document.getElementById('z-out'), btnR=document.getElementById('z-reset');
-    function getSnap(){ try{ return (window.getSnapshot&&window.getSnapshot())||{} }catch(_){ return {} } }
-    function setSnap(s){ try{ if(window.applySnapshot) window.applySnapshot(s) }catch(_){} }
-    function mainSVG(){ var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null; a.sort(function(A,B){function ar(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];var r=x.getBoundingClientRect();return r.width*r.height||0} return ar(B)-ar(A)}); return a[0] }
-    function getZoom(){ var s=getSnap(); var z=Number(s.zoom); if(!isFinite(z)||z<=0) z=1; return z }
-    function show(z){ if(elV) elV.textContent = Math.round(z*100)+'%'; }
-    function applyZoom(z){
-      z=Math.max(0.1,Math.min(8,Number(z)||1));
-      var s=getSnap(); s.zoom=z; setSnap(s);
-      // fallback DOM dacă nu există state
-      var svg=mainSVG(); if(svg){ svg.style.transformOrigin='0 0'; svg.style.transform='scale('+z+')'; }
-      show(z);
-      try{ window.dispatchEvent(new CustomEvent('lcs:zoom-changed',{detail:{zoom:z}})); }catch(_){ }
-      try{ window.LCS && window.LCS.history && window.LCS.history.push('zoom'); }catch(_){ }
+<!-- Status bar: unit, zoom, canvas size, cursor -->
+<style>
+  #lcs-statusbar{position:fixed;left:0;right:0;bottom:0;z-index:99980;background:#111827;color:#e5e7eb;padding:6px 10px;font:12px/1.2 system-ui;display:flex;gap:16px;align-items:center}
+  #lcs-statusbar .item{opacity:.9}
+</style>
+<div id="lcs-statusbar">
+  <div class="item" id="sb-unit">Unit: mm</div>
+  <div class="item" id="sb-zoom">Zoom: 100%</div>
+  <div class="item" id="sb-canvas">Canvas: —</div>
+  <div class="item" id="sb-cursor">Cursor: —</div>
+</div>
+<script>
+(function(){
+  if (window.__LCS_STATUSBAR__) return; window.__LCS_STATUSBAR__=true;
+  var elU = document.getElementById('sb-unit'),
+      elZ = document.getElementById('sb-zoom'),
+      elC = document.getElementById('sb-canvas'),
+      elP = document.getElementById('sb-cursor');
+  function snap(){ try{ return (window.getSnapshot&&window.getSnapshot())||{} }catch(_){ return {} } }
+  function svg(){ var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
+    a.sort(function(A,B){function ar(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];var r=x.getBoundingClientRect();return r.width*r.height||0} return ar(B)-ar(A)}); return a[0] }
+  function zoom(){ var s=snap(); var z=Number(s.zoom); return (isFinite(z)&&z>0)?z:1 }
+  function unit(){ var u=(snap().unit||'mm'); return (u==='inches'||u==='inch')?'in':u }
+  function updateBasics(){
+    var s=snap(); var u=unit(); var z=zoom();
+    if (elU) elU.textContent = 'Unit: '+u;
+    if (elZ) elZ.textContent = 'Zoom: '+Math.round(z*100)+'%';
+    var w=0,h=0, sv=svg();
+    var canvas = s.canvas||{};
+    if (typeof canvas.width==='number' && typeof canvas.height==='number'){ w=canvas.width; h=canvas.height; }
+    else if (sv){ var vb=(sv.getAttribute('viewBox')||'').split(/\s+/).map(Number); if(vb.length===4&&vb.every(isFinite)){ w=vb[2]; h=vb[3]; } }
+    if (elC) elC.textContent = 'Canvas: ' + (w|0) + '×' + (h|0) + ' px';
+  }
+  function setupPointer(){
+    var sv=svg(); if(!sv) return;
+    sv.addEventListener('mousemove', function(e){
+      try{
+        var pt = sv.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY;
+        var ctm = sv.getScreenCTM(); if(!ctm) return;
+        var ip = pt.matrixTransform(ctm.inverse());
+        var u=unit(), px2 = (u==='in') ? (1/96) : (25.4/96);
+        elP && (elP.textContent = 'Cursor: ' + (ip.x*px2).toFixed(2) + ' ' + u + ', ' + (ip.y*px2).toFixed(2) + ' ' + u);
+      }catch(_){}}
+    );
+  }
+  updateBasics(); setupPointer();
+  window.addEventListener('lcs:state-applied', updateBasics);
+  window.addEventListener('lcs:zoom-changed', updateBasics);
+})();
+</script>
+
+<!-- Zoom UI + keyboard -->
+<style>
+  #lcs-zoom {position:fixed;right:16px;bottom:140px;z-index:99990;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.15);padding:6px;display:flex;gap:6px;align-items:center}
+  #lcs-zoom button{width:34px;height:34px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;cursor:pointer;font:600 14px/1 system-ui}
+  #lcs-zoom .val{min-width:58px;text-align:center;font:600 12px/1 system-ui;color:#111827}
+</style>
+<div id="lcs-zoom" title="Zoom">
+  <button id="z-out" aria-label="Zoom out">−</button>
+  <div class="val" id="z-val">100%</div>
+  <button id="z-in" aria-label="Zoom in">+</button>
+  <button id="z-reset" aria-label="Reset zoom">100%</button>
+</div>
+<script>
+(function(){
+  if (window.__LCS_ZOOM_UI__) return; window.__LCS_ZOOM_UI__=true;
+  var elV=document.getElementById('z-val'), btnIn=document.getElementById('z-in'), btnOut=document.getElementById('z-out'), btnR=document.getElementById('z-reset');
+  function getSnap(){ try{ return (window.getSnapshot&&window.getSnapshot())||{} }catch(_){ return {} } }
+  function setSnap(s){ try{ if(window.applySnapshot) window.applySnapshot(s) }catch(_){} }
+  function mainSVG(){ var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null; a.sort(function(A,B){function ar(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];var r=x.getBoundingClientRect();return r.width*r.height||0} return ar(B)-ar(A)}); return a[0] }
+  function getZoom(){ var s=getSnap(); var z=Number(s.zoom); if(!isFinite(z)||z<=0) z=1; return z }
+  function show(z){ if(elV) elV.textContent = Math.round(z*100)+'%'; }
+  function applyZoom(z){
+    z=Math.max(0.1,Math.min(8,Number(z)||1));
+    var s=getSnap(); s.zoom=z; setSnap(s);
+    var svg=mainSVG(); if(svg){ svg.style.transformOrigin='0 0'; svg.style.transform='scale('+z+')'; }
+    show(z);
+    try{ window.dispatchEvent(new CustomEvent('lcs:zoom-changed',{detail:{zoom:z}})); }catch(_){}
+    try{ window.LCS && window.LCS.history && window.LCS.history.push('zoom'); }catch(_){}
+  }
+  btnIn && (btnIn.onclick = function(){ applyZoom(getZoom()+0.1); });
+  btnOut && (btnOut.onclick = function(){ applyZoom(getZoom()-0.1); });
+  btnR && (btnR.onclick = function(){ applyZoom(1); });
+  show(getZoom());
+  // Ctrl+=/+, Ctrl-, Ctrl+0
+  window.addEventListener('keydown', function(e){
+    var k=(e.key||'').toLowerCase(); if(!(e.ctrlKey||e.metaKey)) return;
+    if (k==='=' || k==='+'){ e.preventDefault(); applyZoom(getZoom()+0.1); }
+    else if(k==='-'){ e.preventDefault(); applyZoom(getZoom()-0.1); }
+    else if(k==='0'){ e.preventDefault(); applyZoom(1); }
+  }, {passive:false});
+  window.addEventListener('lcs:state-applied', function(){ show(getZoom()); });
+})();
+</script>
+
+<!-- Marquee Selection (drag to select multiple) – fixed for re-renders -->
+<style>
+  svg .selected { outline: none; }
+</style>
+<script>
+(function(){
+  if (window.__LCS_MARQUEE__) return; window.__LCS_MARQUEE__ = true;
+
+  function mainSVG(){
+    var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
+    a.sort(function(A,B){
+      function area(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
+        if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];
+        var r=x.getBoundingClientRect(); return r.width*r.height||0;}
+      return area(B)-area(A);
+    });
+    return a[0];
+  }
+  function svgPoint(svg, clientX, clientY){
+    var pt = svg.createSVGPoint(); pt.x = clientX; pt.y = clientY;
+    var m = svg.getScreenCTM(); if (!m) return {x:clientX,y:clientY};
+    var p = pt.matrixTransform(m.inverse()); return {x:p.x, y:p.y};
+  }
+  function ensureMarqueeRect(svg){
+    var g = svg.querySelector('g.lcs-marquee');
+    if (!g){ g = document.createElementNS('http://www.w3.org/2000/svg','g'); g.setAttribute('class','lcs-marquee'); svg.appendChild(g); }
+    var r = g.querySelector('#lcs-marquee-rect');
+    if (!r){
+      r = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      r.setAttribute('id','lcs-marquee-rect');
+      r.setAttribute('fill','#3b82f6'); r.setAttribute('fill-opacity','0.12');
+      r.setAttribute('stroke','#3b82f6'); r.setAttribute('stroke-width','1');
+      r.setAttribute('stroke-dasharray','4,3'); r.setAttribute('pointer-events','none');
+      r.setAttribute('visibility','hidden'); g.appendChild(r);
     }
-    btnIn && (btnIn.onclick = function(){ applyZoom(getZoom()+0.1); });
-    btnOut && (btnOut.onclick = function(){ applyZoom(getZoom()-0.1); });
-    btnR && (btnR.onclick = function(){ applyZoom(1); });
-    show(getZoom());
-    // shortcuts: Ctrl+=/+, Ctrl- , Ctrl+0
-    window.addEventListener('keydown', function(e){
-      var k=(e.key||'').toLowerCase(); if(!(e.ctrlKey||e.metaKey)) return;
-      if (k==='=' || k==='+'){ e.preventDefault(); applyZoom(getZoom()+0.1); }
-      else if(k==='-'){ e.preventDefault(); applyZoom(getZoom()-0.1); }
-      else if(k==='0'){ e.preventDefault(); applyZoom(1); }
-    }, {passive:false});
-    // update afișaj la schimbări externe
-    window.addEventListener('lcs:state-applied', function(){ show(getZoom()); });
-  })();
+    return r;
+  }
+  function selectableNodes(svg){
+    var list = [].slice.call(svg.querySelectorAll('path,rect,circle,ellipse,polygon,polyline,g'));
+    return list.filter(function(n){
+      var tn = (n.tagName||'').toLowerCase();
+      if (tn==='svg'||tn==='defs'||tn==='clippath'||tn==='title'||tn==='desc') return false;
+      if (n.closest('defs')) return false;
+      return true;
+    });
+  }
+  function bboxOf(el){ try{ var b = el.getBBox(); return {x:b.x,y:b.y,width:b.width,height:b.height}; }catch(_){ return null; } }
+  function rectsOverlap(a,b){ return a && b && (a.x < b.x + b.width) && (a.x + a.width > b.x) && (a.y < b.y + b.height) && (a.y + a.height > b.y); }
+  function normalizeRect(x1,y1,x2,y2){ var x=Math.min(x1,x2),y=Math.min(y1,y2); return {x:x,y:y,width:Math.abs(x2-x1),height:Math.abs(y2-y1)}; }
+  function clearSelection(svg){ [].slice.call(svg.querySelectorAll('[data-selected="1"],.selected')).forEach(function(n){ n.removeAttribute('data-selected'); n.classList.remove('selected'); }); }
+  function addSelected(nodes){ nodes.forEach(function(n){ n.setAttribute('data-selected','1'); n.classList.add('selected'); }); }
+  function canStartMarquee(e){ if (e.altKey) return true; return e.target === curSvg; }
+
+  var curSvg=null, rect=null;
+  var drag = {active:false, start:{x:0,y:0}, additive:false, forced:false};
+
+  document.addEventListener('mousedown', function(e){
+    if (e.button!==0) return;
+    curSvg = (e.target && e.target.closest && e.target.closest('svg')) || mainSVG();
+    if (!curSvg) return;
+    if (!canStartMarquee(e) && e.target!==curSvg) return;
+    rect = ensureMarqueeRect(curSvg);
+    var p = svgPoint(curSvg, e.clientX, e.clientY);
+    drag.active = true; drag.start = p;
+    drag.additive = !!(e.shiftKey || e.ctrlKey || e.metaKey);
+    drag.forced = !!e.altKey;
+    rect.setAttribute('x', p.x); rect.setAttribute('y', p.y);
+    rect.setAttribute('width', 0); rect.setAttribute('height', 0);
+    rect.setAttribute('visibility','visible');
+    e.preventDefault();
+  }, true);
+
+  window.addEventListener('mousemove', function(e){
+    if (!drag.active || !curSvg || !rect) return;
+    var p = svgPoint(curSvg, e.clientX, e.clientY);
+    var r = normalizeRect(drag.start.x, drag.start.y, p.x, p.y);
+    rect.setAttribute('x', r.x); rect.setAttribute('y', r.y);
+    rect.setAttribute('width', r.width); rect.setAttribute('height', r.height);
+    e.preventDefault();
+  }, true);
+
+  window.addEventListener('mouseup', function(e){
+    if (!drag.active || !curSvg || !rect) return;
+    var end = svgPoint(curSvg, e.clientX, e.clientY);
+    var selRect = normalizeRect(drag.start.x, drag.start.y, end.x, end.y);
+    rect.setAttribute('visibility','hidden');
+    drag.active = false;
+
+    var candidates = selectableNodes(curSvg);
+    var picked = [];
+    for (var i=0;i<candidates.length;i++){
+      var bb = bboxOf(candidates[i]); if (!bb) continue;
+      if (rectsOverlap(selRect, bb)) picked.push(candidates[i]);
+    }
+    if (!drag.additive) clearSelection(curSvg);
+    addSelected(picked);
+    try { window.LCS && window.LCS.history && window.LCS.history.push('marquee-select'); }catch(_){}
+    e.preventDefault();
+  }, true);
+})();
   </script>
-  <!-- Marquee Selection (drag to select multiple) – fixed for re-renders -->
-  <style>
-    /* doar pentru highlight vizual al selecției existente (dacă nu ai deja) */
-    svg .selected { outline: none; }
-  </style>
-  <script>
-  (function(){
-    if (window.__LCS_MARQUEE__) return; window.__LCS_MARQUEE__ = true;
+<!-- Marquee Selection (drag to select multiple) – style -->
+<style>
+  /* doar pentru highlight vizual al selecției existente (dacă nu ai deja) */
+  svg .selected { outline: none; }
+</style>
 
-    function mainSVG(){
-      var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
-      a.sort(function(A,B){
-        function area(x){
-          var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
-          if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];
-          var r=x.getBoundingClientRect(); return r.width*r.height||0;
-        }
-        return area(B)-area(A);
-      });
-      return a[0];
-    }
+<!-- BOOT: start with empty canvas (wipe default demo once per page load) -->
+<script>
+(function(){
+  if (window.__LCS_BOOT_EMPTY__) return; window.__LCS_BOOT_EMPTY__=true;
+  // pornește o singură dată pe sesiune (tab)
+  if (sessionStorage.getItem('LCS:bootCleared')==='1') return;
 
-    function svgPoint(svg, clientX, clientY){
-      var pt = svg.createSVGPoint(); pt.x = clientX; pt.y = clientY;
-      var m = svg.getScreenCTM(); if (!m) return {x:clientX,y:clientY};
-      var p = pt.matrixTransform(m.inverse()); return {x:p.x, y:p.y};
-    }
-
-    function ensureMarqueeRect(svg){
-      var g = svg.querySelector('g.lcs-marquee');
-      if (!g){
-        g = document.createElementNS('http://www.w3.org/2000/svg','g');
-        g.setAttribute('class','lcs-marquee');
-        svg.appendChild(g);
+  function mainSVG(){
+    var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
+    a.sort(function(A,B){
+      function ar(x){
+        var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
+        if(vb.length===4&&vb.every(isFinite)) return vb[2]*vb[3];
+        var r=x.getBoundingClientRect(); return r.width*r.height||0;
       }
-      var r = g.querySelector('#lcs-marquee-rect');
-      if (!r){
-        r = document.createElementNS('http://www.w3.org/2000/svg','rect');
-        r.setAttribute('id','lcs-marquee-rect');
-        r.setAttribute('fill','#3b82f6');
-        r.setAttribute('fill-opacity','0.12');
-        r.setAttribute('stroke','#3b82f6');
-        r.setAttribute('stroke-width','1');
-        r.setAttribute('stroke-dasharray','4,3');
-        r.setAttribute('pointer-events','none');
-        r.setAttribute('visibility','hidden');
-        g.appendChild(r);
-      }
-      return r;
+      return ar(B)-ar(A);
+    });
+    return a[0];
+  }
+
+  function wipe(svg){
+    if (!svg) return false;
+    var keep = {defs:1,title:1,desc:1,metadata:1,clipPath:1,mask:1,pattern:1,linearGradient:1,radialGradient:1};
+    // păstrăm doar defs/metadata; golim restul
+    [].slice.call(svg.childNodes).forEach(function(n){
+      if (n.nodeType!==1) return; // element nodes
+      var t=(n.tagName||'').toLowerCase();
+      if (!keep[t]) { try{ n.remove(); }catch(_){} }
+    });
+    // creăm un strat "root" gol pentru app
+    var g=document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.setAttribute('class','lcs-root'); g.setAttribute('data-export','true');
+    svg.appendChild(g);
+    try{ window.LCS && window.LCS.history && window.LCS.history.push('boot-clear'); }catch(_){}
+    return true;
+  }
+
+  // așteaptă până când React a montat SVG-ul
+  var tries=0;
+  (function tick(){
+    var svg = mainSVG();
+    if (svg && wipe(svg)){
+      sessionStorage.setItem('LCS:bootCleared','1');
+      return;
     }
-
-    function selectableNodes(svg){
-      var list = [].slice.call(svg.querySelectorAll('path,rect,circle,ellipse,polygon,polyline,g'));
-      return list.filter(function(n){
-        var tn = (n.tagName||'').toLowerCase();
-        if (tn==='svg'||tn==='defs'||tn==='clippath'||tn==='title'||tn==='desc') return false;
-        if (n.closest('defs')) return false;
-        return true;
-      });
-    }
-
-    function bboxOf(el){
-      try{ var b = el.getBBox(); return {x:b.x,y:b.y,width:b.width,height:b.height}; }catch(_){ return null; }
-    }
-    function rectsOverlap(a,b){
-      return a && b &&
-        (a.x < b.x + b.width) && (a.x + a.width > b.x) &&
-        (a.y < b.y + b.height) && (a.y + a.height > b.y);
-    }
-    function normalizeRect(x1,y1,x2,y2){
-      var x = Math.min(x1,x2), y=Math.min(y1,y2);
-      return {x:x,y:y,width:Math.abs(x2-x1),height:Math.abs(y2-y1)};
-    }
-
-    function clearSelection(svg){
-      [].slice.call(svg.querySelectorAll('[data-selected="1"],.selected')).forEach(function(n){
-        n.removeAttribute('data-selected'); n.classList.remove('selected');
-      });
-    }
-    function addSelected(nodes){
-      nodes.forEach(function(n){ n.setAttribute('data-selected','1'); n.classList.add('selected'); });
-    }
-
-    var curSvg = null;
-    var rect = null;
-    var drag = {active:false, start:{x:0,y:0}, additive:false, forced:false};
-
-    function canStartMarquee(e, svg){
-      // începe pe fundal sau dacă e ținut ALT
-      if (e.altKey) return true;
-      return e.target === svg;
-    }
-
-    document.addEventListener('mousedown', function(e){
-      if (e.button!==0) return; // doar click stânga
-      // svg curent = cel mai apropiat de target sau cel mai mare din pagină
-      curSvg = (e.target && e.target.closest && e.target.closest('svg')) || mainSVG();
-      if (!curSvg) return;
-      if (!canStartMarquee(e, curSvg) && e.target!==curSvg) return;
-      rect = ensureMarqueeRect(curSvg);
-      var p = svgPoint(curSvg, e.clientX, e.clientY);
-      drag.active = true; drag.start = p;
-      drag.additive = !!(e.shiftKey || e.ctrlKey || e.metaKey);
-      drag.forced = !!e.altKey;
-      rect.setAttribute('x', p.x); rect.setAttribute('y', p.y);
-      rect.setAttribute('width', 0); rect.setAttribute('height', 0);
-      rect.setAttribute('visibility','visible');
-      e.preventDefault();
-    }, true);
-
-    window.addEventListener('mousemove', function(e){
-      if (!drag.active) return;
-      if (!curSvg || !rect) return;
-      var p = svgPoint(curSvg, e.clientX, e.clientY);
-      var r = normalizeRect(drag.start.x, drag.start.y, p.x, p.y);
-      rect.setAttribute('x', r.x); rect.setAttribute('y', r.y);
-      rect.setAttribute('width', r.width); rect.setAttribute('height', r.height);
-      e.preventDefault();
-    }, true);
-
-    window.addEventListener('mouseup', function(e){
-      if (!drag.active) return;
-      if (!curSvg || !rect) return;
-      var end = svgPoint(curSvg, e.clientX, e.clientY);
-      var selRect = normalizeRect(drag.start.x, drag.start.y, end.x, end.y);
-      rect.setAttribute('visibility','hidden');
-      drag.active = false;
-
-      // calculează selecția
-      var candidates = selectableNodes(curSvg);
-      var picked = [];
-      for (var i=0;i<candidates.length;i++){
-        var bb = bboxOf(candidates[i]); if (!bb) continue;
-        if (rectsOverlap(selRect, bb)) picked.push(candidates[i]);
-      }
-      if (!drag.additive) clearSelection(curSvg);
-      addSelected(picked);
-      try { window.LCS && window.LCS.history && window.LCS.history.push('marquee-select'); }catch(_){ }
-      e.preventDefault();
-      curSvg = null;
-      rect = null;
-    }, true);
+    if (++tries<120) return setTimeout(tick, 50); // până la ~6s
   })();
+})();
+</script>
+
+<!-- Marquee Selection (drag to select multiple) – fixed for re-renders -->
+<script>
+(function(){
+  if (window.__LCS_MARQUEE__) return; window.__LCS_MARQUEE__ = true;
+
+  function mainSVG(){
+    var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
+    a.sort(function(A,B){
+      function area(x){
+        var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
+        if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];
+        var r=x.getBoundingClientRect(); return r.width*r.height||0;
+      }
+      return area(B)-area(A);
+    });
+    return a[0];
+  }
+
+  function svgPoint(svg, clientX, clientY){
+    var pt = svg.createSVGPoint(); pt.x = clientX; pt.y = clientY;
+    var m = svg.getScreenCTM(); if (!m) return {x:clientX,y:clientY};
+    var p = pt.matrixTransform(m.inverse()); return {x:p.x, y:p.y};
+  }
+
+  function ensureMarqueeRect(svg){
+    var g = svg.querySelector('g.lcs-marquee');
+    if (!g){
+      g = document.createElementNS('http://www.w3.org/2000/svg','g');
+      g.setAttribute('class','lcs-marquee');
+      svg.appendChild(g);
+    }
+    var r = g.querySelector('#lcs-marquee-rect');
+    if (!r){
+      r = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      r.setAttribute('id','lcs-marquee-rect');
+      r.setAttribute('fill','#3b82f6');
+      r.setAttribute('fill-opacity','0.12');
+      r.setAttribute('stroke','#3b82f6');
+      r.setAttribute('stroke-width','1');
+      r.setAttribute('stroke-dasharray','4,3');
+      r.setAttribute('pointer-events','none');
+      r.setAttribute('visibility','hidden');
+      g.appendChild(r);
+    }
+    return r;
+  }
+
+  function selectableNodes(svg){
+    var list = [].slice.call(svg.querySelectorAll('path,rect,circle,ellipse,polygon,polyline,g'));
+    return list.filter(function(n){
+      var tn = (n.tagName||'').toLowerCase();
+      if (tn==='svg'||tn==='defs'||tn==='clippath'||tn==='title'||tn==='desc') return false;
+      if (n.closest('defs')) return false;
+      return true;
+    });
+  }
+
+  function bboxOf(el){
+    try{ var b = el.getBBox(); return {x:b.x,y:b.y,width:b.width,height:b.height}; }catch(_){ return null; }
+  }
+  function rectsOverlap(a,b){
+    return a && b &&
+      (a.x < b.x + b.width) && (a.x + a.width > b.x) &&
+      (a.y < b.y + b.height) && (a.y + a.height > b.y);
+  }
+  function normalizeRect(x1,y1,x2,y2){
+    var x = Math.min(x1,x2), y=Math.min(y1,y2);
+    return {x:x,y:y,width:Math.abs(x2-x1),height:Math.abs(y2-y1)};
+  }
+
+  function clearSelection(svg){
+    [].slice.call(svg.querySelectorAll('[data-selected="1"],.selected')).forEach(function(n){
+      n.removeAttribute('data-selected'); n.classList.remove('selected');
+    });
+  }
+  function addSelected(nodes){
+    nodes.forEach(function(n){ n.setAttribute('data-selected','1'); n.classList.add('selected'); });
+  }
+  function canStartMarquee(e, svg){
+    // începe pe fundal sau dacă e ținut ALT
+    if (e.altKey) return true;
+    return e.target === svg;
+  }
+
+  var curSvg = null;
+  var rect = null;
+  var drag = {active:false, start:{x:0,y:0}, additive:false, forced:false};
+
+  document.addEventListener('mousedown', function(e){
+    if (e.button!==0) return; // doar click stânga
+    // svg curent = cel mai apropiat de target sau cel mai mare din pagină
+    curSvg = (e.target && e.target.closest && e.target.closest('svg')) || mainSVG();
+    if (!curSvg) return;
+    if (!canStartMarquee(e, curSvg) && e.target!==curSvg) return;
+    rect = ensureMarqueeRect(curSvg);
+    var p = svgPoint(curSvg, e.clientX, e.clientY);
+    drag.active = true; drag.start = p;
+    drag.additive = !!(e.shiftKey || e.ctrlKey || e.metaKey);
+    drag.forced = !!e.altKey;
+    rect.setAttribute('x', p.x); rect.setAttribute('y', p.y);
+    rect.setAttribute('width', 0); rect.setAttribute('height', 0);
+    rect.setAttribute('visibility','visible');
+    e.preventDefault();
+  }, true);
+
+  window.addEventListener('mousemove', function(e){
+    if (!drag.active) return;
+    if (!curSvg || !rect) return;
+    var p = svgPoint(curSvg, e.clientX, e.clientY);
+    var r = normalizeRect(drag.start.x, drag.start.y, p.x, p.y);
+    rect.setAttribute('x', r.x); rect.setAttribute('y', r.y);
+    rect.setAttribute('width', r.width); rect.setAttribute('height', r.height);
+    e.preventDefault();
+  }, true);
+
+  window.addEventListener('mouseup', function(e){
+    if (!drag.active) return;
+    if (!curSvg || !rect) return;
+    var end = svgPoint(curSvg, e.clientX, e.clientY);
+    var selRect = normalizeRect(drag.start.x, drag.start.y, end.x, end.y);
+    rect.setAttribute('visibility','hidden');
+    drag.active = false;
+
+    // calculează selecția
+    var candidates = selectableNodes(curSvg);
+    var picked = [];
+    for (var i=0;i<candidates.length;i++){
+      var bb = bboxOf(candidates[i]); if (!bb) continue;
+      if (rectsOverlap(selRect, bb)) picked.push(candidates[i]);
+    }
+    if (!drag.additive) clearSelection(curSvg);
+    addSelected(picked);
+    try { window.LCS && window.LCS.history && window.LCS.history.push('marquee-select'); }catch(_){ }
+    e.preventDefault();
+    curSvg = null;
+    rect = null;
+  }, true);
+})();
   </script>
 </body>
 </html>
