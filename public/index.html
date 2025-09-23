@@ -3758,7 +3758,7 @@
     window.addEventListener('lcs:state-applied', function(){ show(getZoom()); });
   })();
   </script>
-  <!-- Marquee Selection (drag to select multiple) -->
+  <!-- Marquee Selection (drag to select multiple) – fixed for re-renders -->
   <style>
     /* doar pentru highlight vizual al selecției existente (dacă nu ai deja) */
     svg .selected { outline: none; }
@@ -3841,20 +3841,24 @@
       nodes.forEach(function(n){ n.setAttribute('data-selected','1'); n.classList.add('selected'); });
     }
 
-    var svg = mainSVG(); if (!svg) return;
-    var rect = ensureMarqueeRect(svg);
+    var curSvg = null;
+    var rect = null;
     var drag = {active:false, start:{x:0,y:0}, additive:false, forced:false};
 
-    function canStartMarquee(e){
+    function canStartMarquee(e, svg){
       // începe pe fundal sau dacă e ținut ALT
       if (e.altKey) return true;
       return e.target === svg;
     }
 
-    svg.addEventListener('mousedown', function(e){
+    document.addEventListener('mousedown', function(e){
       if (e.button!==0) return; // doar click stânga
-      if (!canStartMarquee(e)) return;
-      var p = svgPoint(svg, e.clientX, e.clientY);
+      // svg curent = cel mai apropiat de target sau cel mai mare din pagină
+      curSvg = (e.target && e.target.closest && e.target.closest('svg')) || mainSVG();
+      if (!curSvg) return;
+      if (!canStartMarquee(e, curSvg) && e.target!==curSvg) return;
+      rect = ensureMarqueeRect(curSvg);
+      var p = svgPoint(curSvg, e.clientX, e.clientY);
       drag.active = true; drag.start = p;
       drag.additive = !!(e.shiftKey || e.ctrlKey || e.metaKey);
       drag.forced = !!e.altKey;
@@ -3866,7 +3870,8 @@
 
     window.addEventListener('mousemove', function(e){
       if (!drag.active) return;
-      var p = svgPoint(svg, e.clientX, e.clientY);
+      if (!curSvg || !rect) return;
+      var p = svgPoint(curSvg, e.clientX, e.clientY);
       var r = normalizeRect(drag.start.x, drag.start.y, p.x, p.y);
       rect.setAttribute('x', r.x); rect.setAttribute('y', r.y);
       rect.setAttribute('width', r.width); rect.setAttribute('height', r.height);
@@ -3875,22 +3880,25 @@
 
     window.addEventListener('mouseup', function(e){
       if (!drag.active) return;
-      var end = svgPoint(svg, e.clientX, e.clientY);
+      if (!curSvg || !rect) return;
+      var end = svgPoint(curSvg, e.clientX, e.clientY);
       var selRect = normalizeRect(drag.start.x, drag.start.y, end.x, end.y);
       rect.setAttribute('visibility','hidden');
       drag.active = false;
 
       // calculează selecția
-      var candidates = selectableNodes(svg);
+      var candidates = selectableNodes(curSvg);
       var picked = [];
       for (var i=0;i<candidates.length;i++){
         var bb = bboxOf(candidates[i]); if (!bb) continue;
         if (rectsOverlap(selRect, bb)) picked.push(candidates[i]);
       }
-      if (!drag.additive) clearSelection(svg);
+      if (!drag.additive) clearSelection(curSvg);
       addSelected(picked);
       try { window.LCS && window.LCS.history && window.LCS.history.push('marquee-select'); }catch(_){ }
       e.preventDefault();
+      curSvg = null;
+      rect = null;
     }, true);
   })();
   </script>
