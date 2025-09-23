@@ -3894,10 +3894,67 @@
 
 <!-- Grid overlay (non-export), toggle Ctrl+' -->
 <style>
+  /* Quickbar container în dreapta-jos */
+  #lcs-quickbar{position:fixed;right:16px;bottom:16px;z-index:99992;display:flex;gap:8px;align-items:center}
+  #lcs-quickbar [data-quick]{border:1px solid #e5e7eb;border-radius:10px;background:#fff;padding:8px 12px;cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,.15);font:600 12px/1 system-ui;color:#111827}
+  #lcs-quickbar .gear{width:40px;height:40px;border-radius:9999px;display:inline-flex;align-items:center;justify-content:center;font-size:18px}
+  /* păstrăm stilul vechi pentru fallback, dar îl ascundem când quickbar este prezent */
   #lcs-grid-toggle{position:fixed;left:16px;bottom:84px;z-index:99990;background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.15);padding:6px}
+  #lcs-grid-toggle[data-moved="1"]{display:none!important}
   #lcs-grid-toggle button{border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:6px 10px;cursor:pointer}
 </style>
-<div id="lcs-grid-toggle"><button id="grid-btn" title="Toggle grid (Ctrl+')"># Grid</button></div>
+<!-- Quickbar: va conține ⚙️ + # Grid (non-export) -->
+<div id="lcs-quickbar" data-export="false" aria-label="Quick actions"></div>
+<!-- Instanța veche (fallback; o vom muta în quickbar prin JS) -->
+<div id="lcs-grid-toggle" data-export="false"><button id="grid-btn" title="Toggle grid (Ctrl+')"># Grid</button></div>
+
+<!-- Quickbar wiring: mută ⚙️ + #Grid în dreapta-jos -->
+<script>
+(function(){
+  if (window.__LCS_QUICKBAR__) return; window.__LCS_QUICKBAR__=true;
+  function byId(id){ return document.getElementById(id); }
+  var qb = byId('lcs-quickbar');
+  if (!qb) return;
+  // 1) Grid: mutăm butonul existent #grid-btn în quickbar (și ascundem containerul vechi)
+  try{
+    var gridBtn = byId('grid-btn');
+    var gridWrap = byId('lcs-grid-toggle');
+    if (gridBtn){
+      gridBtn.setAttribute('data-quick','1');
+      qb.appendChild(gridBtn);
+      if (gridWrap){ gridWrap.setAttribute('data-moved','1'); }
+    }
+  }catch(_){ }
+  // 2) Settings: folosim butonul existent #lcs-gear-btn dacă există; altfel creăm un proxy
+  try{
+    var gearBtn = byId('lcs-gear-btn');
+    var proxy;
+    if (gearBtn){
+      proxy = document.createElement('button');
+      proxy.type = 'button';
+      proxy.className = 'gear';
+      proxy.setAttribute('data-quick','1');
+      proxy.setAttribute('title','Settings');
+      proxy.textContent = '⚙️';
+      proxy.addEventListener('click', function(e){ e.preventDefault(); try{ gearBtn.click(); }catch(_){ } }, {capture:true});
+      qb.appendChild(proxy);
+    } else {
+      proxy = document.createElement('button');
+      proxy.type = 'button';
+      proxy.className = 'gear';
+      proxy.setAttribute('data-quick','1');
+      proxy.setAttribute('title','Settings');
+      proxy.textContent = '⚙️';
+      proxy.addEventListener('click', function(){
+        try{
+          window.dispatchEvent(new CustomEvent('lcs:open-settings'));
+        }catch(_){ }
+      }, {capture:true});
+      qb.appendChild(proxy);
+    }
+  }catch(_){ }
+})();
+</script>
 <script>
 (function(){
   if (window.__LCS_GRID__) return; window.__LCS_GRID__=true;
