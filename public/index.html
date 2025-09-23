@@ -3093,5 +3093,78 @@
     }, {passive:false});
   })();
   </script>
+  <!-- Grid overlay (non-export), toggle Ctrl+' -->
+  <style>
+    #lcs-grid-toggle{position:fixed;left:16px;bottom:84px;z-index:99990;background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.15);padding:6px}
+    #lcs-grid-toggle button{border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:6px 10px;cursor:pointer}
+  </style>
+  <div id="lcs-grid-toggle"><button id="grid-btn" title="Toggle grid (Ctrl+')"># Grid</button></div>
+  <script>
+  (function(){
+    if (window.__LCS_GRID__) return; window.__LCS_GRID__=true;
+    function svg(){ var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null; a.sort(function(A,B){function ar(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];var r=x.getBoundingClientRect();return r.width*r.height||0} return ar(B)-ar(A)}); return a[0] }
+    function unit(){ var u=( (window.getSnapshot&&window.getSnapshot())||{} ).unit||'mm'; return (u==='inches'||u==='inch')?'in':u }
+    function ensureGroup(){
+      var sv=svg(); if(!sv) return null;
+      var g=sv.querySelector('g.lcs-grid-layer'); if(g) return g;
+      g=document.createElementNS('http://www.w3.org/2000/svg','g');
+      g.setAttribute('class','grid lcs-grid-layer'); g.setAttribute('data-export','false'); g.setAttribute('pointer-events','none');
+      sv.insertBefore(g, sv.firstChild);
+      return g;
+    }
+    function draw(){
+      var sv=svg(); if(!sv) return;
+      var g=ensureGroup(); if(!g) return;
+      // clear
+      while(g.firstChild) g.removeChild(g.firstChild);
+      // bounds
+      var vb=(sv.getAttribute('viewBox')||'').split(/\s+/).map(Number);
+      var x=0,y=0,w=0,h=0; if(vb.length===4&&vb.every(isFinite)){x=vb[0];y=vb[1];w=vb[2];h=vb[3];} else {var bb=sv.getBBox(); x=bb.x;y=bb.y;w=bb.width;h=bb.height;}
+      var u=unit();
+      var stepPx = (u==='in') ? (96/2) : (96/25.4*10); // 0.5in sau 10mm
+      var minor = stepPx/5;
+      for(var X=Math.floor(x/minor)*minor; X<=x+w; X+=minor){
+        var l=document.createElementNS('http://www.w3.org/2000/svg','line');
+        l.setAttribute('x1',X); l.setAttribute('y1',y);
+        l.setAttribute('x2',X); l.setAttribute('y2',y+h);
+        l.setAttribute('stroke','#e5e7eb'); l.setAttribute('stroke-width','0.6');
+        g.appendChild(l);
+      }
+      for(var Y=Math.floor(y/minor)*minor; Y<=y+h; Y+=minor){
+        var l=document.createElementNS('http://www.w3.org/2000/svg','line');
+        l.setAttribute('x1',x); l.setAttribute('y1',Y);
+        l.setAttribute('x2',x+w); l.setAttribute('y2',Y);
+        l.setAttribute('stroke','#e5e7eb'); l.setAttribute('stroke-width','0.6');
+        g.appendChild(l);
+      }
+      // bold on major
+      for(var X=Math.floor(x/stepPx)*stepPx; X<=x+w; X+=stepPx){
+        var l=document.createElementNS('http://www.w3.org/2000/svg','line');
+        l.setAttribute('x1',X); l.setAttribute('y1',y);
+        l.setAttribute('x2',X); l.setAttribute('y2',y+h);
+        l.setAttribute('stroke','#c7cdd4'); l.setAttribute('stroke-width','1');
+        g.appendChild(l);
+      }
+      for(var Y=Math.floor(y/stepPx)*stepPx; Y<=y+h; Y+=stepPx){
+        var l=document.createElementNS('http://www.w3.org/2000/svg','line');
+        l.setAttribute('x1',x); l.setAttribute('y1',Y);
+        l.setAttribute('x2',x+w); l.setAttribute('y2',Y);
+        l.setAttribute('stroke','#c7cdd4'); l.setAttribute('stroke-width','1');
+        g.appendChild(l);
+      }
+    }
+    function toggle(){
+      var g=ensureGroup(); if(!g) return;
+      var vis = g.getAttribute('display')==='none' ? '' : 'none';
+      g.setAttribute('display', vis);
+    }
+    document.getElementById('grid-btn').onclick = function(){ draw(); toggle(); };
+    window.addEventListener('keydown', function(e){
+      var k=e.key||''; if((e.ctrlKey||e.metaKey) && (k==="'" || k==='’')){ e.preventDefault(); draw(); toggle(); }
+    }, {passive:false});
+    window.addEventListener('lcs:state-applied', function(){ var g=document.querySelector('g.lcs-grid-layer'); if(g && g.getAttribute('display')!=='none'){ draw(); } });
+    window.addEventListener('lcs:zoom-changed', function(){ var g=document.querySelector('g.lcs-grid-layer'); if(g && g.getAttribute('display')!=='none'){ draw(); } });
+  })();
+  </script>
 </body>
 </html>
