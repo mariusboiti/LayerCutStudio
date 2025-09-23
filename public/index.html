@@ -3894,5 +3894,48 @@
     }, true);
   })();
   </script>
+  <!-- BOOT: start with empty canvas (wipe default demo once per page load) -->
+  <script>
+  (function(){
+    if (window.__LCS_BOOT_EMPTY__) return; window.__LCS_BOOT_EMPTY__=true;
+    // pornește o singură dată pe sesiune (tab)
+    if (sessionStorage.getItem('LCS:bootCleared')==='1') return;
+    function mainSVG(){
+      var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
+      a.sort(function(A,B){
+        function ar(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
+          if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3]; var r=x.getBoundingClientRect(); return r.width*r.height||0}
+        return ar(B)-ar(A);
+      });
+      return a[0];
+    }
+    function wipe(svg){
+      if (!svg) return false;
+      var keep = {defs:1,title:1,desc:1,metadata:1,clipPath:1,mask:1,pattern:1,linearGradient:1,radialGradient:1};
+      // păstrăm doar defs/metadata; golim restul
+      [].slice.call(svg.childNodes).forEach(function(n){
+        if (n.nodeType!==1) return; // element nodes
+        var t=(n.tagName||'').toLowerCase();
+        if (!keep[t]) { try{ n.remove(); }catch(_){}} 
+      });
+      // creăm un strat "root" gol pentru app
+      var g=document.createElementNS('http://www.w3.org/2000/svg','g');
+      g.setAttribute('class','lcs-root'); g.setAttribute('data-export','true');
+      svg.appendChild(g);
+      try{ window.LCS && window.LCS.history && window.LCS.history.push('boot-clear'); }catch(_){}
+      return true;
+    }
+    // așteaptă până când React a montat SVG-ul
+    var tries=0;
+    (function tick(){
+      var svg = mainSVG();
+      if (svg && wipe(svg)){
+        sessionStorage.setItem('LCS:bootCleared','1');
+        return;
+      }
+      if (++tries<120) return setTimeout(tick, 50); // până la ~6s
+    })();
+  })();
+  </script>
 </body>
 </html>
