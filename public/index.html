@@ -210,6 +210,26 @@
  </div>
 
  <div class="wrap">
+   <div id="lcs-project-tools" style="margin:16px auto;max-width:1200px;padding:16px;border:1px solid #d1d5db;border-radius:12px;background:#fff;box-shadow:0 1px 2px rgba(15,23,42,0.04);">
+     <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;">
+       <div style="display:flex;flex-direction:column;gap:4px;">
+         <div style="font-size:14px;font-weight:600;color:#111827;">Project &amp; autosave</div>
+         <div id="lcs-status" style="font-size:12px;color:#6b7280;">Last saved: never</div>
+       </div>
+       <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#374151;">
+         <input id="lcs-autosave" type="checkbox" style="width:16px;height:16px;" checked />
+         Autosave to browser storage (60s)
+       </label>
+     </div>
+     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
+       <button id="lcs-save" style="padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;">💾 Save now (Ctrl+S)</button>
+       <button id="lcs-load" style="padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;">⤓ Load from autosave</button>
+       <button id="lcs-export" style="padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;">⬇ Export .lcs</button>
+       <button id="lcs-export-svg" style="padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;">🧾 Export SVG for Laser</button>
+       <button id="lcs-import-btn" style="padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;">⬆ Import .lcs (Ctrl+O)</button>
+       <input id="lcs-import" type="file" accept=".lcs,application/json" style="display:none" />
+     </div>
+   </div>
     <div id="app" class="row"></div>
   </div>
   <!-- HUD eliminat (ascuns) -->
@@ -2658,6 +2678,396 @@
     window.__LCS_NORMALIZE__ = { normalizeSnapshot: normalizeSnapshot };
   })();
   </script>
+  <!-- Project persistence helpers + SVG export -->
+  <script>
+  (function(){
+    if (window.__LCS_PROJECT_PANEL__) return;
+    window.__LCS_PROJECT_PANEL__ = true;
+
+    var STORAGE_KEY = 'LayerCutStudio:autosave';
+    var AUTOSAVE_PREF_KEY = STORAGE_KEY + ':enabled';
+    var AUTOSAVE_INTERVAL = 60000;
+
+    var statusEl = document.getElementById('lcs-status');
+    var autosaveChk = document.getElementById('lcs-autosave');
+    var btnSave = document.getElementById('lcs-save');
+    var btnLoad = document.getElementById('lcs-load');
+    var btnExport = document.getElementById('lcs-export');
+    var btnExportSVG = document.getElementById('lcs-export-svg');
+    var btnImportBtn = document.getElementById('lcs-import-btn');
+    var inputImport = document.getElementById('lcs-import');
+
+    var autosaveEnabled = true;
+    var autosaveTimer = null;
+
+    function setStatusMessage(msg){
+      if (statusEl) statusEl.textContent = msg;
+    }
+
+    function formatTimestamp(ts){
+      var d = new Date(ts);
+      if (isNaN(d.getTime())) return null;
+      try { return d.toLocaleString(); } catch(_){ return d.toISOString(); }
+    }
+
+    function setStatusFromTs(ts, suffix){
+      if (!statusEl) return;
+      if (!ts){
+        statusEl.textContent = 'Last saved: never';
+        return;
+      }
+      var label = formatTimestamp(ts);
+      if (!label){
+        statusEl.textContent = 'Last saved: unknown';
+        return;
+      }
+      statusEl.textContent = 'Last saved: ' + label + (suffix ? ' ' + suffix : '');
+    }
+
+    function getSnapshotSafe(){
+      try {
+        if (typeof window.getSnapshot !== 'function') return null;
+        var snap = window.getSnapshot();
+        if (!snap || typeof snap !== 'object') return null;
+        if (typeof structuredClone === 'function') return structuredClone(snap);
+        return JSON.parse(JSON.stringify(snap));
+      } catch (e) {
+        console.warn('[LCS] getSnapshot failed', e);
+        return null;
+      }
+    }
+
+    function clearAutosaveTimer(){
+      if (autosaveTimer){
+        clearTimeout(autosaveTimer);
+        autosaveTimer = null;
+      }
+    }
+
+    function autosaveLoop(){
+      clearAutosaveTimer();
+      if (!autosaveEnabled) return;
+      autosaveTimer = setTimeout(function(){
+        saveToLocal({ silent:true, tag:'autosave', restart:false });
+        autosaveLoop();
+      }, AUTOSAVE_INTERVAL);
+    }
+
+    function restartAutosaveLoop(){
+      clearAutosaveTimer();
+      if (autosaveEnabled) autosaveLoop();
+    }
+
+    function readSavedStatus(){
+      try {
+        var raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw){
+          setStatusFromTs(null);
+          return;
+        }
+        var data = JSON.parse(raw);
+        if (data && typeof data.t === 'number') setStatusFromTs(data.t);
+        else setStatusFromTs(null);
+      } catch (e) {
+        console.warn('[LCS] read autosave failed', e);
+        setStatusMessage('Last saved: storage unavailable');
+      }
+    }
+
+    function saveToLocal(opts){
+      opts = opts || {};
+      var snap = getSnapshotSafe();
+      if (!snap){
+        if (!opts.silent) setStatusMessage('Last saved: unavailable (no snapshot)');
+        return false;
+      }
+      var payload = { t: Date.now(), v: 1, snap: snap };
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      } catch (e) {
+        console.warn('[LCS] save failed', e);
+        if (!opts.silent) alert('Save failed. Unable to access localStorage.');
+        setStatusMessage('Last saved: storage error');
+        return false;
+      }
+      var suffix = '';
+      if (opts.suffix) suffix = opts.suffix;
+      else if (opts.tag) suffix = '(' + opts.tag + ')';
+      setStatusFromTs(payload.t, suffix);
+      if (opts.restart !== false) restartAutosaveLoop();
+      try {
+        window.dispatchEvent(new CustomEvent('lcs:saved', { detail:{ ts: payload.t, reason: opts.tag || 'manual' } }));
+      } catch(_){ }
+      return true;
+    }
+
+    function cloneSnapshot(snap){
+      if (!snap || typeof snap !== 'object') return null;
+      try {
+        return (typeof structuredClone === 'function') ? structuredClone(snap) : JSON.parse(JSON.stringify(snap));
+      } catch (e) {
+        console.warn('[LCS] clone snapshot fallback', e);
+        try { return JSON.parse(JSON.stringify(snap)); } catch(_){ return snap; }
+      }
+    }
+
+    function applySnapshotData(snap, tag){
+      if (!snap || typeof snap !== 'object') throw new Error('Snapshot missing');
+      if (typeof window.applySnapshot !== 'function') throw new Error('applySnapshot unavailable');
+      var copy = cloneSnapshot(snap);
+      window.applySnapshot(copy);
+      var ts = Date.now();
+      setStatusFromTs(ts, tag ? '(' + tag + ')' : '(imported)');
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ t: ts, v: 1, snap: copy }));
+      } catch (e) {
+        console.warn('[LCS] store imported snapshot failed', e);
+      }
+      restartAutosaveLoop();
+      return true;
+    }
+
+    function importSnapshotPayload(raw, opts){
+      opts = opts || {};
+      if (!raw) throw new Error('Empty payload');
+      if (typeof Blob !== 'undefined' && raw instanceof Blob){
+        var reader = new FileReader();
+        reader.onload = function(){
+          try {
+            importSnapshotPayload(reader.result, opts);
+          } catch (err) {
+            console.warn('[LCS] import failed', err);
+            alert('Import failed: ' + (err && err.message ? err.message : 'invalid file'));
+          }
+        };
+        reader.onerror = function(){
+          alert('Import failed. Could not read file.');
+        };
+        reader.readAsText(raw);
+        return true;
+      }
+      var data = raw;
+      if (typeof raw === 'string'){
+        data = JSON.parse(raw);
+      }
+      if (data && typeof data === 'object'){
+        var snap = data.snap || data.snapshot || data.data || data.snapShot || data;
+        return applySnapshotData(snap, opts.tag || 'imported');
+      }
+      throw new Error('Unsupported snapshot payload');
+    }
+
+    function loadFromLocal(){
+      var raw;
+      try {
+        raw = localStorage.getItem(STORAGE_KEY);
+      } catch (e) {
+        alert('Cannot access autosave storage.');
+        return;
+      }
+      if (!raw){
+        alert('No autosave found.');
+        return;
+      }
+      var data;
+      try { data = JSON.parse(raw); }
+      catch(_){ alert('Autosave data is corrupted.'); return; }
+      var snap = data && (data.snap || data.snapshot || data.data);
+      if (!snap || typeof snap !== 'object'){ alert('Autosave snapshot missing.'); return; }
+      try {
+        applySnapshotData(snap, 'loaded');
+        if (typeof window.pushHistory === 'function'){
+          try { window.pushHistory('load-autosave'); } catch(_){ }
+        }
+      } catch (e) {
+        console.warn('[LCS] load autosave failed', e);
+        alert('Failed to apply autosave snapshot.');
+      }
+    }
+
+    function exportFile(){
+      try {
+        var snap = getSnapshotSafe();
+        if (!snap){
+          alert('Nothing to export yet.');
+          return;
+        }
+        var data = { t: Date.now(), v: 1, snap: snap };
+        var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'layercut-project.lcs';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 0);
+      } catch (e) {
+        console.warn('[LCS] export failed', e);
+        alert('Export failed. See console for details.');
+      }
+    }
+
+    function exportSVGForLaser(){
+      try {
+        var unit = 'mm';
+        try {
+          var snap = (typeof window.getSnapshot === 'function') ? window.getSnapshot() : null;
+          if (snap && typeof snap.unit === 'string') unit = snap.unit;
+        } catch(_){ }
+        unit = (unit === 'in' || unit === 'inch' || unit === 'inches') ? 'in' : 'mm';
+        var PX_TO_MM = 25.4 / 96;
+        var PX_TO_IN = 1 / 96;
+        var px2u = unit === 'in' ? PX_TO_IN : PX_TO_MM;
+
+        var svgs = Array.from(document.querySelectorAll('svg'));
+        if (!svgs.length){ alert('No SVG found to export.'); return; }
+        function areaOf(svg){
+          var vb = (svg.getAttribute('viewBox')||'').trim().split(/\s+/).map(Number);
+          if (vb.length === 4 && vb.every(function(n){ return Number.isFinite(n); })) return Math.abs(vb[2] * vb[3]);
+          var r = svg.getBoundingClientRect();
+          return Math.abs((r.width||0) * (r.height||0));
+        }
+        var main = svgs.slice().sort(function(a,b){ return areaOf(b) - areaOf(a); })[0];
+        if (!main){ alert('No SVG found to export.'); return; }
+        var clone = main.cloneNode(true);
+
+        var removeSel = '[data-export="false"],[data-export=false],.grid,.guide,.guides,.handle,.handles,.selection,.ui';
+        try {
+          clone.querySelectorAll(removeSel).forEach(function(el){ el.remove(); });
+        } catch(_){ }
+
+        var vbAttr = (main.getAttribute('viewBox')||'').trim();
+        var vbParts = vbAttr ? vbAttr.split(/\s+/).map(Number) : [];
+        var w = 0, h = 0;
+        if (vbParts.length === 4 && vbParts.every(function(n){ return Number.isFinite(n); })){
+          w = vbParts[2];
+          h = vbParts[3];
+          clone.setAttribute('viewBox', vbParts.join(' '));
+        } else {
+          try {
+            var bb = main.getBBox();
+            if (bb && Number.isFinite(bb.width) && Number.isFinite(bb.height)){
+              w = bb.width;
+              h = bb.height;
+              clone.setAttribute('viewBox', [bb.x, bb.y, bb.width, bb.height].join(' '));
+            }
+          } catch(_){ }
+        }
+        if (w > 0 && h > 0){
+          clone.setAttribute('width', (w * px2u).toFixed(3) + unit);
+          clone.setAttribute('height', (h * px2u).toFixed(3) + unit);
+        } else {
+          clone.removeAttribute('width');
+          clone.removeAttribute('height');
+        }
+
+        clone.querySelectorAll('*').forEach(function(el){
+          try {
+            var sw = el.getAttribute && el.getAttribute('stroke-width');
+            if (sw && /^-?\d+(\.\d+)?/.test(sw)){
+              var val = parseFloat(sw);
+              if (Number.isFinite(val)) el.setAttribute('stroke-width', (val * px2u).toFixed(3) + unit);
+            }
+            var tag = (el.tagName||'').toLowerCase();
+            if (tag === 'path'){
+              if (!el.getAttribute('stroke-linejoin')) el.setAttribute('stroke-linejoin','round');
+              if (!el.getAttribute('stroke-linecap')) el.setAttribute('stroke-linecap','round');
+            }
+          } catch(_){ }
+        });
+
+        var xmlHead = '<?xml version="1.0" encoding="UTF-8"?>\n';
+        var meta = '<!-- Exported by LayerCut Studio • unit=' + unit + ' • ' + new Date().toISOString() + ' -->\n';
+        var serializer = new XMLSerializer();
+        var svgString = serializer.serializeToString(clone);
+        if (!/xmlns=/.test(svgString)) svgString = svgString.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+        var blob = new Blob([xmlHead + meta + svgString], { type: 'image/svg+xml' });
+        var url = URL.createObjectURL(blob);
+        var link = document.createElement('a');
+        link.href = url;
+        link.download = 'layercut-export.svg';
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(function(){ URL.revokeObjectURL(url); link.remove(); }, 0);
+      } catch (e) {
+        console.warn('[LCS] exportSVG failed', e);
+        alert('Export SVG failed. See console for details.');
+      }
+    }
+
+    function handleFileInput(ev){
+      try {
+        var file = ev && ev.target && ev.target.files ? ev.target.files[0] : null;
+        if (file) importSnapshotPayload(file, { tag:'imported' });
+      } catch(e){
+        console.warn('[LCS] import handler failed', e);
+      } finally {
+        if (ev && ev.target) ev.target.value = '';
+      }
+    }
+
+    function setAutosave(flag){
+      autosaveEnabled = !!flag;
+      if (autosaveChk) autosaveChk.checked = autosaveEnabled;
+      try { localStorage.setItem(AUTOSAVE_PREF_KEY, autosaveEnabled ? '1' : '0'); } catch(_){ }
+      if (autosaveEnabled) restartAutosaveLoop();
+      else clearAutosaveTimer();
+    }
+
+    // Hook buttons
+    if (btnSave) btnSave.onclick = function(){ saveToLocal(); };
+    if (btnLoad) btnLoad.onclick = function(){ loadFromLocal(); };
+    if (btnExport) btnExport.onclick = exportFile;
+    if (btnExportSVG) btnExportSVG.onclick = exportSVGForLaser;
+    if (btnImportBtn) btnImportBtn.onclick = function(){ if (inputImport) inputImport.click(); };
+    if (inputImport) inputImport.addEventListener('change', handleFileInput);
+    if (autosaveChk) autosaveChk.addEventListener('change', function(){ setAutosave(autosaveChk.checked); });
+
+    // Keyboard shortcuts (Ctrl+S / Ctrl+O)
+    window.addEventListener('keydown', function(e){
+      if (!e) return;
+      if (!e.ctrlKey && !e.metaKey) return;
+      var key = (e.key||'').toLowerCase();
+      if (key === 's'){
+        e.preventDefault();
+        saveToLocal();
+      } else if (key === 'o'){
+        e.preventDefault();
+        if (inputImport) inputImport.click();
+      }
+    }, { passive:false });
+
+    window.addEventListener('beforeunload', function(){
+      if (autosaveEnabled) saveToLocal({ silent:true, tag:'autosave', restart:false });
+    });
+
+    // Initial state
+    (function(){
+      var pref = null;
+      try { pref = localStorage.getItem(AUTOSAVE_PREF_KEY); } catch(_){ }
+      if (pref === '0') autosaveEnabled = false;
+      else if (pref === '1') autosaveEnabled = true;
+      if (autosaveChk) autosaveChk.checked = autosaveEnabled;
+    })();
+
+    readSavedStatus();
+    if (autosaveEnabled) autosaveLoop();
+
+    var api = window.LCS_Project || {};
+    api.saveToLocal = saveToLocal;
+    api.loadFromLocal = loadFromLocal;
+    api.export = exportFile;
+    api.exportSVG = exportSVGForLaser;
+    api.importFile = function(payload){
+      try { return importSnapshotPayload(payload, { tag:'imported' }); }
+      catch(e){ console.warn('[LCS] importFile failed', e); return false; }
+    };
+    api.setAutosave = function(v){ setAutosave(v); };
+    api.isAutosave = function(){ return !!autosaveEnabled; };
+    api.getSnapshotSafe = getSnapshotSafe;
+    window.LCS_Project = api;
+  })();
+  </script>
   <!-- Outline smoothing: enforce round joins/caps + safe offset options -->
   <script>
   (function(){
@@ -2995,6 +3405,215 @@
     window.pushHistory = function(){ try { window.LCS.history.push('manual'); } catch(_){ } };
   })();
   </script>
+  <!-- Align & Distribute (floating toolbar) -->
+  <style>
+    #lcs-alignbar{position:fixed;right:16px;bottom:84px;z-index:99990;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.15);padding:8px}
+    #lcs-alignbar .row{display:flex;gap:6px;margin:6px 4px}
+    #lcs-alignbar button{width:34px;height:34px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;cursor:pointer;font:600 14px/1 system-ui}
+    #lcs-alignbar button:hover{background:#f3f4f6}
+    #lcs-alignbar .ttl{font:700 12px/1 system-ui;color:#374151;margin:2px 4px 0}
+  </style>
+  <div id="lcs-alignbar" title="Align & Distribute">
+    <div class="ttl">Align</div>
+    <div class="row">
+      <button id="al-left"  title="Align Left">⟸</button>
+      <button id="al-center" title="Align Center">↔</button>
+      <button id="al-right" title="Align Right">⟹</button>
+    </div>
+    <div class="row">
+      <button id="al-top" title="Align Top">⟰</button>
+      <button id="al-middle" title="Align Middle">↕</button>
+      <button id="al-bottom" title="Align Bottom">⟱</button>
+    </div>
+    <div class="ttl">Distribute</div>
+    <div class="row">
+      <button id="ds-h" title="Distribute Horizontally">═╪═</button>
+      <button id="ds-v" title="Distribute Vertically">║╫║</button>
+    </div>
+  </div>
+  <script>
+  (function(){
+    if (window.__LCS_ALIGN_INSTALLED__) return; window.__LCS_ALIGN_INSTALLED__=true;
+
+    // ------- helpers -------
+    function qsa(sel,root){ return Array.from((root||document).querySelectorAll(sel)); }
+    function editable(el){ if(!el) return false; const t=(el.tagName||'').toLowerCase(); return ['input','textarea','select'].includes(t)||!!el.isContentEditable; }
+    function getMainSVG(){
+      const svgs = qsa('svg');
+      if (!svgs.length) return null;
+      function area(svg){
+        const vb=(svg.getAttribute('viewBox')||'').trim().split(/\s+/).map(Number);
+        if (vb.length===4 && vb.every(isFinite)) return Math.abs(vb[2]*vb[3]);
+        const r=svg.getBoundingClientRect(); return Math.abs(r.width*r.height)||0;
+      }
+      return svgs.sort((a,b)=>area(b)-area(a))[0];
+    }
+    function getBBoxSafe(el){
+      try{ const b=el.getBBox(); return {x:b.x,y:b.y,w:b.width,h:b.height,cx:b.x+b.width/2,cy:b.y+b.height/2}; }catch(_){ return null; }
+    }
+    function parseTransform(tr){
+      tr=tr||''; const m=tr.match(/translate\(([^)]+)\)/i);
+      if(!m) return {tx:0,ty:0,rest:tr};
+      const parts=m[1].split(/[, ]+/).map(Number); return {tx:parts[0]||0,ty:parts[1]||0,rest:tr.replace(m[0],'').trim()};
+    }
+    function setTranslate(el,dx,dy){
+      const t=parseTransform(el.getAttribute('transform'));
+      const ntx=(t.tx||0)+dx, nty=(t.ty||0)+dy;
+      const rest=t.rest ? (t.rest+' ') : '';
+      el.setAttribute('transform', rest + 'translate(' + ntx + ',' + nty + ')');
+    }
+
+    // ------- selection detection -------
+    function selectedDom(){
+      const root=getMainSVG()||document;
+      let els = qsa('[data-selected="1"]',root);
+      if(!els.length) els = qsa('[aria-selected="true"]',root);
+      if(!els.length) els = qsa('.selected',root);
+      // fallback: dacă nu e nimic marcat, ia elementele cu data-lcs-id prezente în selection din state
+      if(!els.length){
+        try{
+          if (typeof window.getSnapshot==='function'){
+            const s=window.getSnapshot()||{};
+            const sel = Array.isArray(s.selection) ? s.selection : (s.selection ? [s.selection] : []);
+            if (sel.length){
+              sel.forEach(id=>{
+                const cand = document.querySelector('[data-lcs-id="'+id+'"], [data-id="'+id+'"], #'+CSS.escape(id));
+                if (cand) els.push(cand);
+              });
+            }
+          }
+        }catch(_){ }
+      }
+      return els;
+    }
+
+    // ------- state align (preferred) -------
+    function tryAlignInState(kind){
+      try{
+        if (typeof window.getSnapshot!=='function' || typeof window.applySnapshot!=='function') return false;
+        const snap = window.getSnapshot() || {};
+        const sel = Array.isArray(snap.selection) ? snap.selection : (snap.selection ? [snap.selection] : []);
+        if (!sel.length) return false;
+        // Colectează elemente candidate din snap (stickers / layers items cu id)
+        const items = [];
+        function addIf(obj){ if(!obj) return; const id=obj.id||obj.key||obj.uuid; if(id && sel.includes(id)) items.push(obj); }
+        if (Array.isArray(snap.stickers)) snap.stickers.forEach(addIf);
+        if (Array.isArray(snap.layers))   snap.layers.forEach(addIf);
+        // dacă nu găsim după id, ieșim pe fallback
+        if (items.length<2) return false;
+        // avem nevoie de poziții x/y (dacă lipsesc, fallback DOM)
+        if (items.some(it=>typeof it.x!=='number' || typeof it.y!=='number')) return false;
+        // bounding box aproximat (fără w/h – aliniem pe x/y sau centru dacă există w/h)
+        const xs = items.map(it=>it.x), ys = items.map(it=>it.y);
+        const minX=Math.min.apply(null,xs), maxX=Math.max.apply(null,xs), minY=Math.min.apply(null,ys), maxY=Math.max.apply(null,ys);
+        const cx=(minX+maxX)/2, cy=(minY+maxY)/2;
+        items.forEach(it=>{
+          if (kind==='left')   it.x = minX;
+          if (kind==='center') it.x = cx;
+          if (kind==='right')  it.x = maxX;
+          if (kind==='top')    it.y = minY;
+          if (kind==='middle') it.y = cy;
+          if (kind==='bottom') it.y = maxY;
+        });
+        window.applySnapshot(snap);
+        if (window.LCS && window.LCS.history) { try{ window.LCS.history.push('align-'+kind); }catch(_){ } }
+        return true;
+      }catch(_){ return false; }
+    }
+
+    // ------- DOM align fallback -------
+    function alignDom(kind){
+      const els = selectedDom();
+      if (els.length<2) return;
+      // calculează bounding box comun
+      const boxes = els.map(el=>({el:el, bb:getBBoxSafe(el)})).filter(x=>!!x.bb);
+      if (boxes.length<2) return;
+      const minX = Math.min.apply(null, boxes.map(b=>b.bb.x));
+      const maxX = Math.max.apply(null, boxes.map(b=>b.bb.x + b.bb.w));
+      const minY = Math.min.apply(null, boxes.map(b=>b.bb.y));
+      const maxY = Math.max.apply(null, boxes.map(b=>b.bb.y + b.bb.h));
+      const cX = (minX+maxX)/2, cY=(minY+maxY)/2;
+      boxes.forEach(b=>{
+        const {x,y,w,h,cx,cy}=b.bb;
+        let dx=0, dy=0;
+        if (kind==='left')   dx = minX - x;
+        if (kind==='center') dx = cX - cx;
+        if (kind==='right')  dx = maxX - (x+w);
+        if (kind==='top')    dy = minY - y;
+        if (kind==='middle') dy = cY - cy;
+        if (kind==='bottom') dy = maxY - (y+h);
+        if (dx||dy) setTranslate(b.el, dx, dy);
+      });
+      if (window.LCS && window.LCS.history) { try{ window.LCS.history.push('align-'+kind); }catch(_){ } }
+    }
+
+    // ------- Distribute (DOM; funcționează pe selecția curentă) -------
+    function distributeDom(axis){ // 'h' or 'v'
+      const els = selectedDom();
+      if (els.length<3) return;
+      const boxes = els.map(el=>({el:el, bb:getBBoxSafe(el)})).filter(x=>!!x.bb);
+      if (boxes.length<3) return;
+      if (axis==='h'){
+        boxes.sort((a,b)=>a.bb.cx-b.bb.cx);
+        const min = Math.min.apply(null, boxes.map(b=>b.bb.x));
+        const max = Math.max.apply(null, boxes.map(b=>b.bb.x + b.bb.w));
+        const totalW = boxes.reduce((s,b)=>s+b.bb.w,0);
+        const gaps = (boxes.length-1);
+        const gap = (max-min-totalW)/Math.max(1,gaps);
+        let cursor = min;
+        boxes.forEach((b)=>{
+          const dx = cursor - b.bb.x;
+          if (dx) setTranslate(b.el, dx, 0);
+          cursor += b.bb.w + gap;
+        });
+      } else {
+        boxes.sort((a,b)=>a.bb.cy-b.bb.cy);
+        const min = Math.min.apply(null, boxes.map(b=>b.bb.y));
+        const max = Math.max.apply(null, boxes.map(b=>b.bb.y + b.bb.h));
+        const totalH = boxes.reduce((s,b)=>s+b.bb.h,0);
+        const gaps = (boxes.length-1);
+        const gap = (max-min-totalH)/Math.max(1,gaps);
+        let cursor = min;
+        boxes.forEach((b)=>{
+          const dy = cursor - b.bb.y;
+          if (dy) setTranslate(b.el, 0, dy);
+          cursor += b.bb.h + gap;
+        });
+      }
+      if (window.LCS && window.LCS.history) { try{ window.LCS.history.push('distribute-'+axis); }catch(_){ } }
+    }
+
+    // ------- wiring -------
+    function doAlign(kind){
+      if (!tryAlignInState(kind)) alignDom(kind);
+    }
+    const $ = (id)=>document.getElementById(id);
+    const map = {
+      'al-left':()=>doAlign('left'),
+      'al-center':()=>doAlign('center'),
+      'al-right':()=>doAlign('right'),
+      'al-top':()=>doAlign('top'),
+      'al-middle':()=>doAlign('middle'),
+      'al-bottom':()=>doAlign('bottom'),
+      'ds-h':()=>distributeDom('h'),
+      'ds-v':()=>distributeDom('v'),
+    };
+    Object.keys(map).forEach(id=>{ const el=$(id); if(el) el.onclick=map[id]; });
+
+    // Shortcuts: Shift+A deschide focus pe toolbar (nu e modal), Alt+Arrow pentru align rapid
+    window.addEventListener('keydown', function(e){
+      if (editable(e.target)) return;
+      const k=(e.key||'').toLowerCase();
+      if (e.shiftKey && k==='a'){ e.preventDefault(); try{ document.getElementById('al-center').focus(); }catch(_){ } }
+      if (e.altKey){
+        if (k==='arrowleft'){ e.preventDefault(); doAlign('left'); }
+        if (k==='arrowright'){ e.preventDefault(); doAlign('right'); }
+        if (k==='arrowup'){ e.preventDefault(); doAlign('top'); }
+        if (k==='arrowdown'){ e.preventDefault(); doAlign('bottom'); }
+      }
+    }, {passive:false});
+  })();
+  </script>
   <!-- Command Palette (Ctrl+K) -->
   <style>
     #lcs-cmdk { display:none; position:fixed; inset:0; z-index:99998; background:rgba(0,0,0,.35); align-items:flex-start; justify-content:center; padding-top:10vh; }
@@ -3034,6 +3653,7 @@
       { title:'Save project (localStorage)', hint:'Ctrl+S', action:function(){ window.LCS_Project && window.LCS_Project.saveToLocal(); } },
       { title:'Load autosave', action:function(){ window.LCS_Project && window.LCS_Project.loadFromLocal(); } },
       { title:'Export .lcs', action:function(){ window.LCS_Project && window.LCS_Project.export(); } },
+      { title:'Export SVG for Laser', action:function(){ window.LCS_Project && window.LCS_Project.exportSVG && window.LCS_Project.exportSVG(); } },
       { title:'Import .lcs', hint:'Ctrl+O', action:function(){ var el=document.getElementById('lcs-import'); if(el) el.click(); } },
       { title:'Zoom: reset to 100%', action:function(){ try{ var s=window.getSnapshot(); s.zoom=1; window.applySnapshot(s); window.LCS && window.LCS.history && window.LCS.history.push('zoom-reset'); }catch(_){} } },
       { title:'Unit: toggle mm/in', action:function(){ try{ var s=window.getSnapshot(); s.unit=(s.unit==='mm'?'in':'mm'); window.applySnapshot(s); window.LCS && window.LCS.history && window.LCS.history.push('unit-toggle'); }catch(_){} } },
@@ -3093,51 +3713,201 @@
     }, {passive:false});
   })();
   </script>
-  <!-- Status bar: unit, zoom, canvas size, cursor -->
-  <style>
-    #lcs-statusbar{position:fixed;left:0;right:0;bottom:0;z-index:99980;background:#111827;color:#e5e7eb;padding:6px 10px;font:12px/1.2 system-ui;display:flex;gap:16px;align-items:center}
-    #lcs-statusbar .item{opacity:.9}
-  </style>
-  <div id="lcs-statusbar">
-    <div class="item" id="sb-unit">Unit: mm</div>
-    <div class="item" id="sb-zoom">Zoom: 100%</div>
-    <div class="item" id="sb-canvas">Canvas: —</div>
-    <div class="item" id="sb-cursor">Cursor: —</div>
-  </div>
-  <script>
-  (function(){
-    if (window.__LCS_STATUSBAR__) return; window.__LCS_STATUSBAR__=true;
-    var elU = document.getElementById('sb-unit'), elZ=document.getElementById('sb-zoom'), elC=document.getElementById('sb-canvas'), elP=document.getElementById('sb-cursor');
-    function snap(){ try{ return (window.getSnapshot&&window.getSnapshot())||{} }catch(_){ return {} } }
-    function svg(){ var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null; a.sort(function(A,B){function ar(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];var r=x.getBoundingClientRect();return r.width*r.height||0} return ar(B)-ar(A)}); return a[0] }
-    function zoom(){ var s=snap(); var z=Number(s.zoom); return (isFinite(z)&&z>0)?z:1 }
-    function unit(){ var u=(snap().unit||'mm'); return (u==='inches'||u==='inch')?'in':u }
-    function updateBasics(){
-      var s=snap(); var u=unit(); var z=zoom();
-      if (elU) elU.textContent = 'Unit: '+u;
-      if (elZ) elZ.textContent = 'Zoom: '+Math.round(z*100)+'%';
-      var w=0,h=0, sv=svg();
-      var canvas = s.canvas||{};
-      if (typeof canvas.width==='number' && typeof canvas.height==='number'){ w=canvas.width; h=canvas.height; }
-      else if (sv){ var vb=(sv.getAttribute('viewBox')||'').split(/\s+/).map(Number); if(vb.length===4&&vb.every(isFinite)){ w=vb[2]; h=vb[3]; } }
-      if (elC) elC.textContent = 'Canvas: ' + (w|0) + '×' + (h|0) + ' px';
+<!-- Status bar: unit, zoom, canvas size, cursor -->
+<style>
+  #lcs-statusbar{position:fixed;left:0;right:0;bottom:0;z-index:99980;background:#111827;color:#e5e7eb;padding:6px 10px;font:12px/1.2 system-ui;display:flex;gap:16px;align-items:center}
+  #lcs-statusbar .item{opacity:.9}
+</style>
+<div id="lcs-statusbar">
+  <div class="item" id="sb-unit">Unit: mm</div>
+  <div class="item" id="sb-zoom">Zoom: 100%</div>
+  <div class="item" id="sb-canvas">Canvas: —</div>
+  <div class="item" id="sb-cursor">Cursor: —</div>
+</div>
+<script>
+(function(){
+  if (window.__LCS_STATUSBAR__) return; window.__LCS_STATUSBAR__=true;
+  var elU = document.getElementById('sb-unit'),
+      elZ = document.getElementById('sb-zoom'),
+      elC = document.getElementById('sb-canvas'),
+      elP = document.getElementById('sb-cursor');
+  function snap(){ try{ return (window.getSnapshot&&window.getSnapshot())||{} }catch(_){ return {} } }
+  function svg(){ var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
+    a.sort(function(A,B){function ar(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];var r=x.getBoundingClientRect();return r.width*r.height||0} return ar(B)-ar(A)}); return a[0] }
+  function zoom(){ var s=snap(); var z=Number(s.zoom); return (isFinite(z)&&z>0)?z:1 }
+  function unit(){ var u=(snap().unit||'mm'); return (u==='inches'||u==='inch')?'in':u }
+  function updateBasics(){
+    var s=snap(); var u=unit(); var z=zoom();
+    if (elU) elU.textContent = 'Unit: '+u;
+    if (elZ) elZ.textContent = 'Zoom: '+Math.round(z*100)+'%';
+    var w=0,h=0, sv=svg();
+    var canvas = s.canvas||{};
+    if (typeof canvas.width==='number' && typeof canvas.height==='number'){ w=canvas.width; h=canvas.height; }
+    else if (sv){ var vb=(sv.getAttribute('viewBox')||'').split(/\s+/).map(Number); if(vb.length===4&&vb.every(isFinite)){ w=vb[2]; h=vb[3]; } }
+    if (elC) elC.textContent = 'Canvas: ' + (w|0) + '×' + (h|0) + ' px';
+  }
+  function setupPointer(){
+    var sv=svg(); if(!sv) return;
+    sv.addEventListener('mousemove', function(e){
+      try{
+        var pt = sv.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY;
+        var ctm = sv.getScreenCTM(); if(!ctm) return;
+        var ip = pt.matrixTransform(ctm.inverse());
+        var u=unit(), px2 = (u==='in') ? (1/96) : (25.4/96);
+        elP && (elP.textContent = 'Cursor: ' + (ip.x*px2).toFixed(2) + ' ' + u + ', ' + (ip.y*px2).toFixed(2) + ' ' + u);
+      }catch(_){}}
+    );
+  }
+  updateBasics(); setupPointer();
+  window.addEventListener('lcs:state-applied', updateBasics);
+  window.addEventListener('lcs:zoom-changed', updateBasics);
+})();
+</script>
+
+<!-- Zoom UI + keyboard -->
+<style>
+  #lcs-zoom {position:fixed;right:16px;bottom:140px;z-index:99990;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.15);padding:6px;display:flex;gap:6px;align-items:center}
+  #lcs-zoom button{width:34px;height:34px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;cursor:pointer;font:600 14px/1 system-ui}
+  #lcs-zoom .val{min-width:58px;text-align:center;font:600 12px/1 system-ui;color:#111827}
+</style>
+<div id="lcs-zoom" title="Zoom">
+  <button id="z-out" aria-label="Zoom out">−</button>
+  <div class="val" id="z-val">100%</div>
+  <button id="z-in" aria-label="Zoom in">+</button>
+  <button id="z-reset" aria-label="Reset zoom">100%</button>
+</div>
+<script>
+(function(){
+  if (window.__LCS_ZOOM_UI__) return; window.__LCS_ZOOM_UI__=true;
+  var elV=document.getElementById('z-val'), btnIn=document.getElementById('z-in'), btnOut=document.getElementById('z-out'), btnR=document.getElementById('z-reset');
+  function getSnap(){ try{ return (window.getSnapshot&&window.getSnapshot())||{} }catch(_){ return {} } }
+  function setSnap(s){ try{ if(window.applySnapshot) window.applySnapshot(s) }catch(_){} }
+  function mainSVG(){ var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null; a.sort(function(A,B){function ar(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];var r=x.getBoundingClientRect();return r.width*r.height||0} return ar(B)-ar(A)}); return a[0] }
+  function getZoom(){ var s=getSnap(); var z=Number(s.zoom); if(!isFinite(z)||z<=0) z=1; return z }
+  function show(z){ if(elV) elV.textContent = Math.round(z*100)+'%'; }
+  function applyZoom(z){
+    z=Math.max(0.1,Math.min(8,Number(z)||1));
+    var s=getSnap(); s.zoom=z; setSnap(s);
+    var svg=mainSVG(); if(svg){ svg.style.transformOrigin='0 0'; svg.style.transform='scale('+z+')'; }
+    show(z);
+    try{ window.dispatchEvent(new CustomEvent('lcs:zoom-changed',{detail:{zoom:z}})); }catch(_){}
+    try{ window.LCS && window.LCS.history && window.LCS.history.push('zoom'); }catch(_){}
+  }
+  btnIn && (btnIn.onclick = function(){ applyZoom(getZoom()+0.1); });
+  btnOut && (btnOut.onclick = function(){ applyZoom(getZoom()-0.1); });
+  btnR && (btnR.onclick = function(){ applyZoom(1); });
+  show(getZoom());
+  // Ctrl+=/+, Ctrl-, Ctrl+0
+  window.addEventListener('keydown', function(e){
+    var k=(e.key||'').toLowerCase(); if(!(e.ctrlKey||e.metaKey)) return;
+    if (k==='=' || k==='+'){ e.preventDefault(); applyZoom(getZoom()+0.1); }
+    else if(k==='-'){ e.preventDefault(); applyZoom(getZoom()-0.1); }
+    else if(k==='0'){ e.preventDefault(); applyZoom(1); }
+  }, {passive:false});
+  window.addEventListener('lcs:state-applied', function(){ show(getZoom()); });
+})();
+</script>
+
+<!-- Marquee Selection (drag to select multiple) – fixed for re-renders -->
+<style>
+  svg .selected { outline: none; }
+</style>
+<script>
+(function(){
+  if (window.__LCS_MARQUEE__) return; window.__LCS_MARQUEE__ = true;
+
+  function mainSVG(){
+    var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
+    a.sort(function(A,B){
+      function area(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
+        if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];
+        var r=x.getBoundingClientRect(); return r.width*r.height||0;}
+      return area(B)-area(A);
+    });
+    return a[0];
+  }
+  function svgPoint(svg, clientX, clientY){
+    var pt = svg.createSVGPoint(); pt.x = clientX; pt.y = clientY;
+    var m = svg.getScreenCTM(); if (!m) return {x:clientX,y:clientY};
+    var p = pt.matrixTransform(m.inverse()); return {x:p.x, y:p.y};
+  }
+  function ensureMarqueeRect(svg){
+    var g = svg.querySelector('g.lcs-marquee');
+    if (!g){ g = document.createElementNS('http://www.w3.org/2000/svg','g'); g.setAttribute('class','lcs-marquee'); svg.appendChild(g); }
+    var r = g.querySelector('#lcs-marquee-rect');
+    if (!r){
+      r = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      r.setAttribute('id','lcs-marquee-rect');
+      r.setAttribute('fill','#3b82f6'); r.setAttribute('fill-opacity','0.12');
+      r.setAttribute('stroke','#3b82f6'); r.setAttribute('stroke-width','1');
+      r.setAttribute('stroke-dasharray','4,3'); r.setAttribute('pointer-events','none');
+      r.setAttribute('visibility','hidden'); g.appendChild(r);
     }
-    function setupPointer(){
-      var sv=svg(); if(!sv) return;
-      sv.addEventListener('mousemove', function(e){
-        try{
-          var pt = sv.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY;
-          var ctm = sv.getScreenCTM(); if(!ctm) return;
-          var ip = pt.matrixTransform(ctm.inverse());
-          var u=unit(), px2 = (u==='in') ? (1/96) : (25.4/96);
-          elP && (elP.textContent = 'Cursor: ' + (ip.x*px2).toFixed(2) + ' ' + u + ', ' + (ip.y*px2).toFixed(2) + ' ' + u);
-        }catch(_){}}
-      );
+    return r;
+  }
+  function selectableNodes(svg){
+    var list = [].slice.call(svg.querySelectorAll('path,rect,circle,ellipse,polygon,polyline,g'));
+    return list.filter(function(n){
+      var tn = (n.tagName||'').toLowerCase();
+      if (tn==='svg'||tn==='defs'||tn==='clippath'||tn==='title'||tn==='desc') return false;
+      if (n.closest('defs')) return false;
+      return true;
+    });
+  }
+  function bboxOf(el){ try{ var b = el.getBBox(); return {x:b.x,y:b.y,width:b.width,height:b.height}; }catch(_){ return null; } }
+  function rectsOverlap(a,b){ return a && b && (a.x < b.x + b.width) && (a.x + a.width > b.x) && (a.y < b.y + b.height) && (a.y + a.height > b.y); }
+  function normalizeRect(x1,y1,x2,y2){ var x=Math.min(x1,x2),y=Math.min(y1,y2); return {x:x,y:y,width:Math.abs(x2-x1),height:Math.abs(y2-y1)}; }
+  function clearSelection(svg){ [].slice.call(svg.querySelectorAll('[data-selected="1"],.selected')).forEach(function(n){ n.removeAttribute('data-selected'); n.classList.remove('selected'); }); }
+  function addSelected(nodes){ nodes.forEach(function(n){ n.setAttribute('data-selected','1'); n.classList.add('selected'); }); }
+  function canStartMarquee(e){ if (e.altKey) return true; return e.target === curSvg; }
+
+  var curSvg=null, rect=null;
+  var drag = {active:false, start:{x:0,y:0}, additive:false, forced:false};
+
+  document.addEventListener('mousedown', function(e){
+    if (e.button!==0) return;
+    curSvg = (e.target && e.target.closest && e.target.closest('svg')) || mainSVG();
+    if (!curSvg) return;
+    if (!canStartMarquee(e) && e.target!==curSvg) return;
+    rect = ensureMarqueeRect(curSvg);
+    var p = svgPoint(curSvg, e.clientX, e.clientY);
+    drag.active = true; drag.start = p;
+    drag.additive = !!(e.shiftKey || e.ctrlKey || e.metaKey);
+    drag.forced = !!e.altKey;
+    rect.setAttribute('x', p.x); rect.setAttribute('y', p.y);
+    rect.setAttribute('width', 0); rect.setAttribute('height', 0);
+    rect.setAttribute('visibility','visible');
+    e.preventDefault();
+  }, true);
+
+  window.addEventListener('mousemove', function(e){
+    if (!drag.active || !curSvg || !rect) return;
+    var p = svgPoint(curSvg, e.clientX, e.clientY);
+    var r = normalizeRect(drag.start.x, drag.start.y, p.x, p.y);
+    rect.setAttribute('x', r.x); rect.setAttribute('y', r.y);
+    rect.setAttribute('width', r.width); rect.setAttribute('height', r.height);
+    e.preventDefault();
+  }, true);
+
+  window.addEventListener('mouseup', function(e){
+    if (!drag.active || !curSvg || !rect) return;
+    var end = svgPoint(curSvg, e.clientX, e.clientY);
+    var selRect = normalizeRect(drag.start.x, drag.start.y, end.x, end.y);
+    rect.setAttribute('visibility','hidden');
+    drag.active = false;
+
+    var candidates = selectableNodes(curSvg);
+    var picked = [];
+    for (var i=0;i<candidates.length;i++){
+      var bb = bboxOf(candidates[i]); if (!bb) continue;
+      if (rectsOverlap(selRect, bb)) picked.push(candidates[i]);
     }
-    updateBasics(); setupPointer();
-    window.addEventListener('lcs:state-applied', updateBasics);
-    window.addEventListener('lcs:zoom-changed', updateBasics);
-  })();
+    if (!drag.additive) clearSelection(curSvg);
+    addSelected(picked);
+    try { window.LCS && window.LCS.history && window.LCS.history.push('marquee-select'); }catch(_){}
+    e.preventDefault();
+  }, true);
+})();
   </script>
 </body>
 </html>
