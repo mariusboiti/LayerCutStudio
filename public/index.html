@@ -2678,481 +2678,411 @@
     window.__LCS_NORMALIZE__ = { normalizeSnapshot: normalizeSnapshot };
   })();
   </script>
-  <!-- Project persistence helpers + SVG export -->
-  <script>
-  (function(){
-    if (window.__LCS_PROJECT_PANEL__) return;
-    window.__LCS_PROJECT_PANEL__ = true;
+<!-- Pro Feature: Project Save/Load + Autosave + Shortcuts -->
+<div id="lcs-gear" style="position:fixed;bottom:16px;right:16px;z-index:99999;">
+  <button id="lcs-gear-btn" title="Settings" style="width:44px;height:44px;border-radius:50%;border:1px solid #d1d5db;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer;font-size:20px;">⚙️</button>
+</div>
+<div id="lcs-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:99998;align-items:center;justify-content:center;">
+  <div style="background:#ffffff;border-radius:12px;min-width:320px;max-width:92vw;padding:16px 16px 12px;box-shadow:0 8px 30px rgba(0,0,0,.35);">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">
+      <strong style="font:600 16px system-ui,Segoe UI,Roboto">LayerCut Studio — Project</strong>
+      <button id="lcs-close" style="border:none;background:transparent;font-size:18px;cursor:pointer;">✖</button>
+    </div>
+    <div style="font:13px system-ui,Segoe UI,Roboto;color:#374151;display:grid;gap:12px;">
+      <label style="display:flex;align-items:center;gap:8px;">
+        <input id="lcs-autosave" type="checkbox"/> Enable autosave (localStorage)
+      </label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button id="lcs-save" style="padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;">💾 Save now (Ctrl+S)</button>
+        <button id="lcs-load" style="padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;">⤓ Load from autosave</button>
+        <button id="lcs-export" style="padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;">⬇ Export .lcs</button>
+        <button id="lcs-export-svg" style="padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;">⬇ Export SVG</button>
+        <button id="lcs-import-btn" style="padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;">⬆ Import .lcs (Ctrl+O)</button>
+        <input id="lcs-import" type="file" accept=".lcs,application/json" style="display:none"/>
+      </div>
+      <div id="lcs-status" style="font-size:12px;color:#6b7280;">Last saved: never</div>
+    </div>
+  </div>
+</div>
 
-    var STORAGE_KEY = 'LayerCutStudio:autosave';
-    var AUTOSAVE_PREF_KEY = STORAGE_KEY + ':enabled';
-    var AUTOSAVE_INTERVAL = 60000;
+<script>
+(function(){
+  if (window.__LCS_PROJECT_PANEL__) return;
+  window.__LCS_PROJECT_PANEL__ = true;
 
-    var statusEl = document.getElementById('lcs-status');
-    var autosaveChk = document.getElementById('lcs-autosave');
-    var btnSave = document.getElementById('lcs-save');
-    var btnLoad = document.getElementById('lcs-load');
-    var btnExport = document.getElementById('lcs-export');
-    var btnExportSVG = document.getElementById('lcs-export-svg');
-    var btnImportBtn = document.getElementById('lcs-import-btn');
-    var inputImport = document.getElementById('lcs-import');
+  // Chei storage (nou + legacy)
+  var STORAGE_KEY = 'LayerCutStudio:autosave';
+  var LEGACY_KEY  = 'LCS_AUTOSAVE_V1';
+  var AUTOSAVE_PREF_KEY = STORAGE_KEY + ':enabled';
 
-    var autosaveEnabled = true;
-    var autosaveTimer = null;
+  var AUTOSAVE_INTERVAL = 60000; // 60s
+  var DEBOUNCE_MS = 600;         // pt. autosave rapid după acțiuni
+  var debTimer = 0;
 
-    function setStatusMessage(msg){
-      if (statusEl) statusEl.textContent = msg;
-    }
+  // UI refs
+  var statusEl = document.getElementById('lcs-status');
+  var autosaveChk = document.getElementById('lcs-autosave');
+  var btnSave = document.getElementById('lcs-save');
+  var btnLoad = document.getElementById('lcs-load');
+  var btnExport = document.getElementById('lcs-export');
+  var btnExportSVG = document.getElementById('lcs-export-svg');
+  var btnImportBtn = document.getElementById('lcs-import-btn');
+  var inputImport = document.getElementById('lcs-import');
+  var gearBtn = document.getElementById('lcs-gear-btn');
+  var modalEl = document.getElementById('lcs-modal');
+  var closeBtn = document.getElementById('lcs-close');
 
-    function formatTimestamp(ts){
-      var d = new Date(ts);
-      if (isNaN(d.getTime())) return null;
-      try { return d.toLocaleString(); } catch(_){ return d.toISOString(); }
-    }
+  // stare
+  var autosaveEnabled = true;
+  var autosaveTimer = null;
 
-    function setStatusFromTs(ts, suffix){
-      if (!statusEl) return;
-      if (!ts){
-        statusEl.textContent = 'Last saved: never';
-        return;
+  // --- Helpers UI
+  function openModal(){ if (modalEl) modalEl.style.display='flex'; }
+  function closeModal(){ if (modalEl) modalEl.style.display='none'; }
+  if (gearBtn) gearBtn.onclick = openModal;
+  if (closeBtn) closeBtn.onclick = closeModal;
+  if (modalEl) modalEl.addEventListener('click', function(e){ if (e.target===modalEl) closeModal(); });
+
+  function formatTimestamp(ts){
+    var d = new Date(ts);
+    if (isNaN(d.getTime())) return null;
+    try { return d.toLocaleString(); } catch(_){ return d.toISOString(); }
+  }
+  function setStatusFromTs(ts, suffix){
+    if (!statusEl) return;
+    if (!ts){ statusEl.textContent = 'Last saved: never'; return; }
+    var label = formatTimestamp(ts) || 'unknown';
+    statusEl.textContent = 'Last saved: ' + label + (suffix ? ' ' + suffix : '');
+  }
+  function setStatusMessage(msg){ if (statusEl) statusEl.textContent = msg; }
+
+  // --- Snapshot helpers
+  function getSnapshotSafe(){
+    try {
+      if (typeof window.getSnapshot === 'function') return window.getSnapshot();
+      if (window.LCS && typeof window.LCS.state === 'function') return window.LCS.state();
+    } catch(e){}
+    return null;
+  }
+  function cloneSnapshot(snap){
+    if (!snap || typeof snap!=='object') return null;
+    try { return (typeof structuredClone==='function') ? structuredClone(snap) : JSON.parse(JSON.stringify(snap)); }
+    catch(_){ try { return JSON.parse(JSON.stringify(snap)); } catch(__){ return snap; } }
+  }
+  function applySnapshotSafe(snap, tag){
+    try {
+      if (typeof window.applySnapshot === 'function'){
+        window.applySnapshot(cloneSnapshot(snap));
+      } else if (window.__LCS_INTERNAL__ && window.__LCS_INTERNAL__.appState){
+        Object.assign(window.__LCS_INTERNAL__.appState, cloneSnapshot(snap));
+        window.dispatchEvent(new CustomEvent('lcs:state-applied', { detail:{ kind:'load', snapshot:snap } }));
+      } else {
+        throw new Error('applySnapshot unavailable');
       }
-      var label = formatTimestamp(ts);
-      if (!label){
-        statusEl.textContent = 'Last saved: unknown';
-        return;
-      }
-      statusEl.textContent = 'Last saved: ' + label + (suffix ? ' ' + suffix : '');
+      setStatusFromTs(Date.now(), tag? '('+tag+')' : '(loaded)');
+      return true;
+    } catch(e){
+      console.warn('[LCS] applySnapshot failed', e);
+      return false;
     }
+  }
 
-    function getSnapshotSafe(){
-      try {
-        if (typeof window.getSnapshot !== 'function') return null;
-        var snap = window.getSnapshot();
-        if (!snap || typeof snap !== 'object') return null;
-        if (typeof structuredClone === 'function') return structuredClone(snap);
-        return JSON.parse(JSON.stringify(snap));
-      } catch (e) {
-        console.warn('[LCS] getSnapshot failed', e);
-        return null;
-      }
-    }
+  // --- Storage
+  function readAutosavePayload(){
+    // încearcă noua cheie, apoi legacy
+    var raw = null;
+    try { raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_KEY); } catch(_){ }
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch(_){ return null; }
+  }
+  function writeAutosavePayload(payload){
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      // și legacy pentru compatibilitate
+      localStorage.setItem(LEGACY_KEY, JSON.stringify(payload));
+    } catch(e){ console.warn('[LCS] save localStorage failed', e); }
+  }
 
-    function clearAutosaveTimer(){
-      if (autosaveTimer){
-        clearTimeout(autosaveTimer);
-        autosaveTimer = null;
-      }
-    }
+  function readSavedStatus(){
+    var p = readAutosavePayload();
+    setStatusFromTs(p && p.t || null);
+  }
 
-    function autosaveLoop(){
-      clearAutosaveTimer();
-      if (!autosaveEnabled) return;
-      autosaveTimer = setTimeout(function(){
-        saveToLocal({ silent:true, tag:'autosave', restart:false });
-        autosaveLoop();
-      }, AUTOSAVE_INTERVAL);
-    }
+  function saveToLocal(opts){
+    opts = opts || {};
+    var snap = getSnapshotSafe();
+    if (!snap){ if(!opts.silent) setStatusMessage('Last saved: unavailable (no snapshot)'); return false; }
+    var payload = { t: Date.now(), v: 1, snap: cloneSnapshot(snap) };
+    writeAutosavePayload(payload);
+    var suffix = opts.suffix || (opts.tag ? '('+opts.tag+')' : '');
+    setStatusFromTs(payload.t, suffix);
+    if (opts.restart !== false) restartAutosaveLoop();
+    try { window.dispatchEvent(new CustomEvent('lcs:saved', { detail:{ ts: payload.t, reason: opts.tag || 'manual' } })); } catch(_){}
+    return true;
+  }
 
-    function restartAutosaveLoop(){
-      clearAutosaveTimer();
-      if (autosaveEnabled) autosaveLoop();
-    }
+  function loadFromLocal(){
+    var p = readAutosavePayload();
+    if (!p || !p.snap){ alert('No autosave found.'); return; }
+    var ok = applySnapshotSafe(p.snap, 'loaded');
+    if (!ok){ alert('Failed to apply autosave snapshot.'); return; }
+    // opțional: notifică istoric
+    try { if (window.LCS && window.LCS.history) window.LCS.history.push('load-autosave'); } catch(_){}
+    restartAutosaveLoop();
+  }
 
-    function readSavedStatus(){
-      try {
-        var raw = localStorage.getItem(STORAGE_KEY);
-        if (!raw){
-          setStatusFromTs(null);
-          return;
-        }
-        var data = JSON.parse(raw);
-        if (data && typeof data.t === 'number') setStatusFromTs(data.t);
-        else setStatusFromTs(null);
-      } catch (e) {
-        console.warn('[LCS] read autosave failed', e);
-        setStatusMessage('Last saved: storage unavailable');
-      }
-    }
+  // Debounced autosave după acțiuni
+  function scheduleAutosave(){
+    if (!autosaveEnabled) return;
+    clearTimeout(debTimer);
+    debTimer = setTimeout(function(){ saveToLocal({ silent:true, tag:'autosave' }); }, DEBOUNCE_MS);
+  }
 
-    function saveToLocal(opts){
-      opts = opts || {};
+  // Buclă autosave periodic
+  function clearAutosaveTimer(){ if (autosaveTimer){ clearTimeout(autosaveTimer); autosaveTimer=null; } }
+  function autosaveLoop(){
+    clearAutosaveTimer();
+    if (!autosaveEnabled) return;
+    autosaveTimer = setTimeout(function(){
+      saveToLocal({ silent:true, tag:'autosave', restart:false });
+      autosaveLoop();
+    }, AUTOSAVE_INTERVAL);
+  }
+  function restartAutosaveLoop(){ clearAutosaveTimer(); if (autosaveEnabled) autosaveLoop(); }
+
+  // Export .lcs
+  function exportFile(){
+    try{
       var snap = getSnapshotSafe();
-      if (!snap){
-        if (!opts.silent) setStatusMessage('Last saved: unavailable (no snapshot)');
-        return false;
-      }
-      var payload = { t: Date.now(), v: 1, snap: snap };
+      if (!snap){ alert('Nothing to export yet.'); return; }
+      var data = { t: Date.now(), v: 1, snap: cloneSnapshot(snap) };
+      var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a'); a.href = url; a.download = 'layercut-project.lcs';
+      document.body.appendChild(a); a.click();
+      setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 0);
+    } catch(e){ console.warn('[LCS] export failed', e); alert('Export failed. See console for details.'); }
+  }
+
+  // Export SVG pentru laser (unități corecte, filtre UI eliminate)
+  function exportSVGForLaser(){
+    try {
+      var unit = 'mm';
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-      } catch (e) {
-        console.warn('[LCS] save failed', e);
-        if (!opts.silent) alert('Save failed. Unable to access localStorage.');
-        setStatusMessage('Last saved: storage error');
-        return false;
-      }
-      var suffix = '';
-      if (opts.suffix) suffix = opts.suffix;
-      else if (opts.tag) suffix = '(' + opts.tag + ')';
-      setStatusFromTs(payload.t, suffix);
-      if (opts.restart !== false) restartAutosaveLoop();
-      try {
-        window.dispatchEvent(new CustomEvent('lcs:saved', { detail:{ ts: payload.t, reason: opts.tag || 'manual' } }));
+        var snap = (typeof window.getSnapshot === 'function') ? window.getSnapshot() : null;
+        if (snap && typeof snap.unit === 'string') unit = snap.unit;
       } catch(_){ }
-      return true;
-    }
+      unit = (unit === 'in' || unit === 'inch' || unit === 'inches') ? 'in' : 'mm';
+      var PX_TO_MM = 25.4 / 96, PX_TO_IN = 1 / 96, px2u = unit==='in' ? PX_TO_IN : PX_TO_MM;
 
-    function cloneSnapshot(snap){
-      if (!snap || typeof snap !== 'object') return null;
-      try {
-        return (typeof structuredClone === 'function') ? structuredClone(snap) : JSON.parse(JSON.stringify(snap));
-      } catch (e) {
-        console.warn('[LCS] clone snapshot fallback', e);
-        try { return JSON.parse(JSON.stringify(snap)); } catch(_){ return snap; }
+      var svgs = Array.from(document.querySelectorAll('svg'));
+      if (!svgs.length){ alert('No SVG found to export.'); return; }
+      function areaOf(svg){
+        var vb = (svg.getAttribute('viewBox')||'').trim().split(/\s+/).map(Number);
+        if (vb.length===4 && vb.every(Number.isFinite)) return Math.abs(vb[2]*vb[3]);
+        var r = svg.getBoundingClientRect(); return Math.abs((r.width||0)*(r.height||0));
       }
-    }
+      var main = svgs.slice().sort(function(a,b){ return areaOf(b)-areaOf(a); })[0];
+      if (!main){ alert('No SVG found to export.'); return; }
+      var clone = main.cloneNode(true);
 
-    function applySnapshotData(snap, tag){
-      if (!snap || typeof snap !== 'object') throw new Error('Snapshot missing');
-      if (typeof window.applySnapshot !== 'function') throw new Error('applySnapshot unavailable');
-      var copy = cloneSnapshot(snap);
-      window.applySnapshot(copy);
-      var ts = Date.now();
-      setStatusFromTs(ts, tag ? '(' + tag + ')' : '(imported)');
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ t: ts, v: 1, snap: copy }));
-      } catch (e) {
-        console.warn('[LCS] store imported snapshot failed', e);
+      // elimină straturi UI / non-export
+      var removeSel='[data-export="false"],[data-export=false],.grid,.guide,.guides,.handle,.handles,.selection,.ui';
+      try { clone.querySelectorAll(removeSel).forEach(function(el){ el.remove(); }); } catch(_){}
+
+      // viewBox / width / height în unități fizice
+      var vbAttr = (main.getAttribute('viewBox')||'').trim();
+      var vbParts = vbAttr ? vbAttr.split(/\s+/).map(Number) : [];
+      var w=0,h=0;
+      if (vbParts.length===4 && vbParts.every(Number.isFinite)){
+        w=vbParts[2]; h=vbParts[3]; clone.setAttribute('viewBox', vbParts.join(' '));
+      } else {
+        try { var bb = main.getBBox(); if (bb && Number.isFinite(bb.width) && Number.isFinite(bb.height)){ w=bb.width; h=bb.height; clone.setAttribute('viewBox',[bb.x,bb.y,bb.width,bb.height].join(' ')); } } catch(_){}
       }
-      restartAutosaveLoop();
-      return true;
-    }
+      if (w>0 && h>0){ clone.setAttribute('width',(w*px2u).toFixed(3)+unit); clone.setAttribute('height',(h*px2u).toFixed(3)+unit); }
+      else { clone.removeAttribute('width'); clone.removeAttribute('height'); }
 
-    function importSnapshotPayload(raw, opts){
-      opts = opts || {};
-      if (!raw) throw new Error('Empty payload');
-      if (typeof Blob !== 'undefined' && raw instanceof Blob){
-        var reader = new FileReader();
-        reader.onload = function(){
-          try {
-            importSnapshotPayload(reader.result, opts);
-          } catch (err) {
-            console.warn('[LCS] import failed', err);
-            alert('Import failed: ' + (err && err.message ? err.message : 'invalid file'));
+      clone.querySelectorAll('*').forEach(function(el){
+        try {
+          var sw = el.getAttribute && el.getAttribute('stroke-width');
+          if (sw && /^-?\d+(\.\d+)?/.test(sw)){
+            var val=parseFloat(sw); if (Number.isFinite(val)) el.setAttribute('stroke-width',(val*px2u).toFixed(3)+unit);
           }
-        };
-        reader.onerror = function(){
-          alert('Import failed. Could not read file.');
-        };
-        reader.readAsText(raw);
-        return true;
-      }
-      var data = raw;
-      if (typeof raw === 'string'){
-        data = JSON.parse(raw);
-      }
-      if (data && typeof data === 'object'){
-        var snap = data.snap || data.snapshot || data.data || data.snapShot || data;
-        return applySnapshotData(snap, opts.tag || 'imported');
-      }
-      throw new Error('Unsupported snapshot payload');
+          var tag=(el.tagName||'').toLowerCase();
+          if (tag==='path'){
+            if (!el.getAttribute('stroke-linejoin')) el.setAttribute('stroke-linejoin','round');
+            if (!el.getAttribute('stroke-linecap'))  el.setAttribute('stroke-linecap','round');
+          }
+        }catch(_){}
+      });
+
+      var xmlHead='<?xml version="1.0" encoding="UTF-8"?>\n';
+      var meta='<!-- Exported by LayerCut Studio • unit='+unit+' • '+new Date().toISOString()+' -->\n';
+      var s = new XMLSerializer().serializeToString(clone);
+      if (!/xmlns=/.test(s)) s = s.replace('<svg','<svg xmlns="http://www.w3.org/2000/svg"');
+      var blob = new Blob([xmlHead+meta+s], { type:'image/svg+xml' });
+      var url = URL.createObjectURL(blob);
+      var link=document.createElement('a'); link.href=url; link.download='layercut-export.svg';
+      document.body.appendChild(link); link.click();
+      setTimeout(function(){ URL.revokeObjectURL(url); link.remove(); }, 0);
+    } catch(e) {
+      console.warn('[LCS] exportSVG failed', e);
+      alert('Export SVG failed. See console for details.');
     }
+  }
 
-    function loadFromLocal(){
-      var raw;
-      try {
-        raw = localStorage.getItem(STORAGE_KEY);
-      } catch (e) {
-        alert('Cannot access autosave storage.');
-        return;
-      }
-      if (!raw){
-        alert('No autosave found.');
-        return;
-      }
-      var data;
-      try { data = JSON.parse(raw); }
-      catch(_){ alert('Autosave data is corrupted.'); return; }
-      var snap = data && (data.snap || data.snapshot || data.data);
-      if (!snap || typeof snap !== 'object'){ alert('Autosave snapshot missing.'); return; }
-      try {
-        applySnapshotData(snap, 'loaded');
-        if (typeof window.pushHistory === 'function'){
-          try { window.pushHistory('load-autosave'); } catch(_){ }
-        }
-      } catch (e) {
-        console.warn('[LCS] load autosave failed', e);
-        alert('Failed to apply autosave snapshot.');
-      }
+  // Import (.lcs sau payload JSON)
+  function importSnapshotPayload(raw, opts){
+    opts = opts || {};
+    if (!raw) throw new Error('Empty payload');
+    if (typeof Blob!=='undefined' && raw instanceof Blob){
+      var reader = new FileReader();
+      reader.onload = function(){ try{ importSnapshotPayload(reader.result, opts); }catch(err){ console.warn('[LCS] import failed', err); alert('Import failed: '+(err&&err.message||'invalid file')); } };
+      reader.onerror = function(){ alert('Import failed. Could not read file.'); };
+      reader.readAsText(raw);
+      return true;
     }
-
-    function exportFile(){
-      try {
-        var snap = getSnapshotSafe();
-        if (!snap){
-          alert('Nothing to export yet.');
-          return;
-        }
-        var data = { t: Date.now(), v: 1, snap: snap };
-        var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement('a');
-        a.href = url;
-        a.download = 'layercut-project.lcs';
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 0);
-      } catch (e) {
-        console.warn('[LCS] export failed', e);
-        alert('Export failed. See console for details.');
+    var data = (typeof raw==='string') ? JSON.parse(raw) : raw;
+    if (data && typeof data==='object'){
+      var snap = data.snap || data.snapshot || data.data || data.snapShot || data;
+      if (!snap || typeof snap!=='object') throw new Error('Snapshot missing');
+      var ok = applySnapshotSafe(snap, opts.tag||'imported');
+      if (ok){
+        try { writeAutosavePayload({ t:Date.now(), v:1, snap: cloneSnapshot(snap) }); } catch(_){}
+        restartAutosaveLoop();
       }
+      return ok;
     }
+    throw new Error('Unsupported snapshot payload');
+  }
 
-    function exportSVGForLaser(){
-      try {
-        var unit = 'mm';
-        try {
-          var snap = (typeof window.getSnapshot === 'function') ? window.getSnapshot() : null;
-          if (snap && typeof snap.unit === 'string') unit = snap.unit;
-        } catch(_){ }
-        unit = (unit === 'in' || unit === 'inch' || unit === 'inches') ? 'in' : 'mm';
-        var PX_TO_MM = 25.4 / 96;
-        var PX_TO_IN = 1 / 96;
-        var px2u = unit === 'in' ? PX_TO_IN : PX_TO_MM;
-
-        var svgs = Array.from(document.querySelectorAll('svg'));
-        if (!svgs.length){ alert('No SVG found to export.'); return; }
-        function areaOf(svg){
-          var vb = (svg.getAttribute('viewBox')||'').trim().split(/\s+/).map(Number);
-          if (vb.length === 4 && vb.every(function(n){ return Number.isFinite(n); })) return Math.abs(vb[2] * vb[3]);
-          var r = svg.getBoundingClientRect();
-          return Math.abs((r.width||0) * (r.height||0));
-        }
-        var main = svgs.slice().sort(function(a,b){ return areaOf(b) - areaOf(a); })[0];
-        if (!main){ alert('No SVG found to export.'); return; }
-        var clone = main.cloneNode(true);
-
-        var removeSel = '[data-export="false"],[data-export=false],.grid,.guide,.guides,.handle,.handles,.selection,.ui';
-        try {
-          clone.querySelectorAll(removeSel).forEach(function(el){ el.remove(); });
-        } catch(_){ }
-
-        var vbAttr = (main.getAttribute('viewBox')||'').trim();
-        var vbParts = vbAttr ? vbAttr.split(/\s+/).map(Number) : [];
-        var w = 0, h = 0;
-        if (vbParts.length === 4 && vbParts.every(function(n){ return Number.isFinite(n); })){
-          w = vbParts[2];
-          h = vbParts[3];
-          clone.setAttribute('viewBox', vbParts.join(' '));
-        } else {
-          try {
-            var bb = main.getBBox();
-            if (bb && Number.isFinite(bb.width) && Number.isFinite(bb.height)){
-              w = bb.width;
-              h = bb.height;
-              clone.setAttribute('viewBox', [bb.x, bb.y, bb.width, bb.height].join(' '));
-            }
-          } catch(_){ }
-        }
-        if (w > 0 && h > 0){
-          clone.setAttribute('width', (w * px2u).toFixed(3) + unit);
-          clone.setAttribute('height', (h * px2u).toFixed(3) + unit);
-        } else {
-          clone.removeAttribute('width');
-          clone.removeAttribute('height');
-        }
-
-        clone.querySelectorAll('*').forEach(function(el){
-          try {
-            var sw = el.getAttribute && el.getAttribute('stroke-width');
-            if (sw && /^-?\d+(\.\d+)?/.test(sw)){
-              var val = parseFloat(sw);
-              if (Number.isFinite(val)) el.setAttribute('stroke-width', (val * px2u).toFixed(3) + unit);
-            }
-            var tag = (el.tagName||'').toLowerCase();
-            if (tag === 'path'){
-              if (!el.getAttribute('stroke-linejoin')) el.setAttribute('stroke-linejoin','round');
-              if (!el.getAttribute('stroke-linecap')) el.setAttribute('stroke-linecap','round');
-            }
-          } catch(_){ }
-        });
-
-        var xmlHead = '<?xml version="1.0" encoding="UTF-8"?>\n';
-        var meta = '<!-- Exported by LayerCut Studio • unit=' + unit + ' • ' + new Date().toISOString() + ' -->\n';
-        var serializer = new XMLSerializer();
-        var svgString = serializer.serializeToString(clone);
-        if (!/xmlns=/.test(svgString)) svgString = svgString.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
-        var blob = new Blob([xmlHead + meta + svgString], { type: 'image/svg+xml' });
-        var url = URL.createObjectURL(blob);
-        var link = document.createElement('a');
-        link.href = url;
-        link.download = 'layercut-export.svg';
-        document.body.appendChild(link);
-        link.click();
-        setTimeout(function(){ URL.revokeObjectURL(url); link.remove(); }, 0);
-      } catch (e) {
-        console.warn('[LCS] exportSVG failed', e);
-        alert('Export SVG failed. See console for details.');
-      }
+  // Autosave: evenimente & înainte de unload
+  window.addEventListener('lcs:state-applied', scheduleAutosave);
+  try {
+    if (window.LCS && typeof window.LCS.push==='function' && !window.LCS.__pushWrappedForAutosave){
+      var origPush = window.LCS.push;
+      window.LCS.push = function(reason){ try { return origPush.apply(window.LCS, arguments); } finally { scheduleAutosave(); } };
+      window.LCS.__pushWrappedForAutosave = true;
     }
+  } catch(_){}
+  window.addEventListener('beforeunload', function(){ if (autosaveEnabled) saveToLocal({ silent:true, tag:'autosave', restart:false }); });
 
-    function handleFileInput(ev){
-      try {
-        var file = ev && ev.target && ev.target.files ? ev.target.files[0] : null;
-        if (file) importSnapshotPayload(file, { tag:'imported' });
-      } catch(e){
-        console.warn('[LCS] import handler failed', e);
-      } finally {
-        if (ev && ev.target) ev.target.value = '';
-      }
-    }
+  // Hook butoane + shortcuts
+  if (btnSave) btnSave.onclick = function(){ saveToLocal(); };
+  if (btnLoad) btnLoad.onclick = function(){ loadFromLocal(); };
+  if (btnExport) btnExport.onclick = exportFile;
+  if (btnExportSVG) btnExportSVG.onclick = exportSVGForLaser;
+  if (btnImportBtn) btnImportBtn.onclick = function(){ if (inputImport) inputImport.click(); };
+  if (inputImport) inputImport.onchange = function(e){ var f=e.target.files && e.target.files[0]; if (f) importSnapshotPayload(f, { tag:'imported' }); e.target.value=''; };
 
-    function setAutosave(flag){
-      autosaveEnabled = !!flag;
-      if (autosaveChk) autosaveChk.checked = autosaveEnabled;
-      try { localStorage.setItem(AUTOSAVE_PREF_KEY, autosaveEnabled ? '1' : '0'); } catch(_){ }
-      if (autosaveEnabled) restartAutosaveLoop();
-      else clearAutosaveTimer();
-    }
+  function isEditable(el){ if(!el) return false; var t=(el.tagName||'').toLowerCase(); return ['input','textarea','select'].includes(t) || !!el.isContentEditable; }
+  window.addEventListener('keydown', function(e){
+    if (!e.ctrlKey && !e.metaKey) return;
+    if (isEditable(e.target)) return;
+    var k=(e.key||'').toLowerCase();
+    if (k==='s'){ e.preventDefault(); saveToLocal(); }
+    else if (k==='o'){ e.preventDefault(); inputImport && inputImport.click(); }
+  }, { passive:false });
 
-    // Hook buttons
-    if (btnSave) btnSave.onclick = function(){ saveToLocal(); };
-    if (btnLoad) btnLoad.onclick = function(){ loadFromLocal(); };
-    if (btnExport) btnExport.onclick = exportFile;
-    if (btnExportSVG) btnExportSVG.onclick = exportSVGForLaser;
-    if (btnImportBtn) btnImportBtn.onclick = function(){ if (inputImport) inputImport.click(); };
-    if (inputImport) inputImport.addEventListener('change', handleFileInput);
-    if (autosaveChk) autosaveChk.addEventListener('change', function(){ setAutosave(autosaveChk.checked); });
-
-    // Keyboard shortcuts (Ctrl+S / Ctrl+O)
-    window.addEventListener('keydown', function(e){
-      if (!e) return;
-      if (!e.ctrlKey && !e.metaKey) return;
-      var key = (e.key||'').toLowerCase();
-      if (key === 's'){
-        e.preventDefault();
-        saveToLocal();
-      } else if (key === 'o'){
-        e.preventDefault();
-        if (inputImport) inputImport.click();
-      }
-    }, { passive:false });
-
-    window.addEventListener('beforeunload', function(){
-      if (autosaveEnabled) saveToLocal({ silent:true, tag:'autosave', restart:false });
-    });
-
-    // Initial state
-    (function(){
-      var pref = null;
-      try { pref = localStorage.getItem(AUTOSAVE_PREF_KEY); } catch(_){ }
-      if (pref === '0') autosaveEnabled = false;
-      else if (pref === '1') autosaveEnabled = true;
-      if (autosaveChk) autosaveChk.checked = autosaveEnabled;
-    })();
-
+  // Inițializare
+  (function(){
+    var pref=null; try { pref = localStorage.getItem(AUTOSAVE_PREF_KEY); } catch(_){}
+    if (pref==='0') autosaveEnabled=false; else if (pref==='1') autosaveEnabled=true;
+    if (autosaveChk){ autosaveChk.checked = !!autosaveEnabled; autosaveChk.addEventListener('change', function(){ autosaveEnabled=!!autosaveChk.checked; try{ localStorage.setItem(AUTOSAVE_PREF_KEY, autosaveEnabled?'1':'0'); }catch(_){ } if (autosaveEnabled){ scheduleAutosave(); restartAutosaveLoop(); } else { clearAutosaveTimer(); } }); }
     readSavedStatus();
     if (autosaveEnabled) autosaveLoop();
-
-    var api = window.LCS_Project || {};
-    api.saveToLocal = saveToLocal;
-    api.loadFromLocal = loadFromLocal;
-    api.export = exportFile;
-    api.exportSVG = exportSVGForLaser;
-    api.importFile = function(payload){
-      try { return importSnapshotPayload(payload, { tag:'imported' }); }
-      catch(e){ console.warn('[LCS] importFile failed', e); return false; }
-    };
-    api.setAutosave = function(v){ setAutosave(v); };
-    api.isAutosave = function(){ return !!autosaveEnabled; };
-    api.getSnapshotSafe = getSnapshotSafe;
-    window.LCS_Project = api;
   })();
-  </script>
-  <!-- Outline smoothing: enforce round joins/caps + safe offset options -->
-  <script>
-  (function(){
-    if (window.__LCS_OUTLINE_FIX__) return;
-    window.__LCS_OUTLINE_FIX__ = true;
 
-    // 1) Canvas 2D: forțează lineJoin/lineCap/miterLimit la fiecare stroke/text
-    try {
-      if (window.CanvasRenderingContext2D && CanvasRenderingContext2D.prototype) {
-        var P = CanvasRenderingContext2D.prototype;
-        var setRound = function(ctx){
-          try{
-            if (ctx.lineJoin !== 'round') ctx.lineJoin = 'round';
-            if (ctx.lineCap  !== 'round') ctx.lineCap  = 'round';
-            if (!(ctx.miterLimit <= 3))   ctx.miterLimit = 2.5;
-          }catch(_){ }
-        };
-        var _stroke = P.stroke;
-        P.stroke = function(){ setRound(this); return _stroke.apply(this, arguments); };
-        var _strokeText = P.strokeText;
-        if (_strokeText) P.strokeText = function(){ setRound(this); return _strokeText.apply(this, arguments); };
-        var _fillText = P.fillText;
-        if (_fillText)   P.fillText   = function(){ setRound(this); return _fillText.apply(this, arguments); };
-      }
-    } catch(_) {}
+  // API public
+  window.LCS_Project = {
+    saveToLocal: saveToLocal,
+    loadFromLocal: loadFromLocal,
+    export: exportFile,
+    exportSVG: exportSVGForLaser,
+    importFile: function(payload){ try{ return importSnapshotPayload(payload, { tag:'imported' }); }catch(e){ console.warn('[LCS] importFile failed', e); return false; } },
+    setAutosave: function(v){ autosaveEnabled=!!v; try{ localStorage.setItem(AUTOSAVE_PREF_KEY, autosaveEnabled?'1':'0'); }catch(_){ } if (autosaveChk) autosaveChk.checked = autosaveEnabled; if (autosaveEnabled){ scheduleAutosave(); restartAutosaveLoop(); } else { clearAutosaveTimer(); } },
+    isAutosave: function(){ return !!autosaveEnabled; },
+    getSnapshotSafe: getSnapshotSafe
+  };
+})();
+</script>
 
-    // 2) SVG: aplică atributele pe orice path (inclusiv pe cele adăugate ulterior)
-    function enforceSvgRound(root){
-      try {
-        (root || document).querySelectorAll('svg path').forEach(function(p){
-          p.setAttribute('stroke-linejoin','round');
-          p.setAttribute('stroke-linecap','round');
-        });
-      } catch(_) {}
+<!-- Outline smoothing: enforce round joins/caps + safe offset options -->
+<script>
+(function(){
+  if (window.__LCS_OUTLINE_FIX__) return;
+  window.__LCS_OUTLINE_FIX__ = true;
+
+  // Canvas2D: forțează round
+  try {
+    if (window.CanvasRenderingContext2D && CanvasRenderingContext2D.prototype) {
+      var P = CanvasRenderingContext2D.prototype;
+      var setRound = function(ctx){
+        try{
+          if (ctx.lineJoin !== 'round') ctx.lineJoin = 'round';
+          if (ctx.lineCap  !== 'round') ctx.lineCap  = 'round';
+          if (!(ctx.miterLimit <= 3))   ctx.miterLimit = 2.5;
+        }catch(_){ }
+      };
+      var _stroke = P.stroke; P.stroke = function(){ setRound(this); return _stroke.apply(this, arguments); };
+      var _strokeText = P.strokeText; if (_strokeText) P.strokeText = function(){ setRound(this); return _strokeText.apply(this, arguments); };
+      var _fillText = P.fillText; if (_fillText) P.fillText = function(){ setRound(this); return _fillText.apply(this, arguments); };
     }
-    enforceSvgRound(document);
+  } catch(_) {}
+
+  // SVG: pe toate path-urile (inclusiv ulterior adăugate)
+  function enforceSvgRound(root){
     try {
-      var mo = new MutationObserver(function(muts){
-        muts.forEach(function(m){
-          m.addedNodes && m.addedNodes.forEach(function(n){
-            if (n && n.nodeType===1){
-              enforceSvgRound(n);
-              if (n.shadowRoot) enforceSvgRound(n.shadowRoot);
-            }
-          });
+      (root || document).querySelectorAll('svg path').forEach(function(p){
+        p.setAttribute('stroke-linejoin','round');
+        p.setAttribute('stroke-linecap','round');
+      });
+    } catch(_) {}
+  }
+  enforceSvgRound(document);
+  try {
+    var mo = new MutationObserver(function(muts){
+      muts.forEach(function(m){
+        m.addedNodes && m.addedNodes.forEach(function(n){
+          if (n && n.nodeType===1){
+            enforceSvgRound(n);
+            if (n.shadowRoot) enforceSvgRound(n.shadowRoot);
+          }
         });
       });
-      mo.observe(document.documentElement, { childList:true, subtree:true });
-      setTimeout(function(){ try{ mo.disconnect(); }catch(_){ } }, 8000); // nu ținem observer-ul la nesfârșit
-    } catch(_) {}
+    });
+    mo.observe(document.documentElement, { childList:true, subtree:true });
+    setTimeout(function(){ try{ mo.disconnect(); }catch(_){ } }, 8000);
+  } catch(_) {}
 
-    // 3) Dacă există o funcție de offset globală, o împachetăm cu opțiuni sigure
-    try {
-      if (typeof window.offsetPathToPolys === 'function' && !window.offsetPathToPolys.__wrappedFix){
-        var _origOffset = window.offsetPathToPolys;
-        window.offsetPathToPolys = function(path, opts){
-          opts = Object.assign(
-            { join:'round', cap:'round', miterLimit:2.5, simplify:true, simplifyTolerance:0.15 },
-            opts || {}
-          );
-          return _origOffset(path, opts);
-        };
-        window.offsetPathToPolys.__wrappedFix = true;
-      }
-    } catch(_) {}
+  // Wrap offsetPathToPolys cu opțiuni sigure
+  try {
+    if (typeof window.offsetPathToPolys === 'function' && !window.offsetPathToPolys.__wrappedFix){
+      var _origOffset = window.offsetPathToPolys;
+      window.offsetPathToPolys = function(path, opts){
+        opts = Object.assign({ join:'round', cap:'round', miterLimit:2.5, simplify:true, simplifyTolerance:0.15 }, opts||{});
+        return _origOffset(path, opts);
+      };
+      window.offsetPathToPolys.__wrappedFix = true;
+    }
+  } catch(_) {}
 
-    // 4) Când se apasă butonul "Set" la grosimi, rulează fixul + push coalesced
-    document.addEventListener('click', function(e){
-      var t = e.target;
-      if (!t || t.tagName !== 'BUTTON') return;
-      var label = (t.textContent || '').trim().toLowerCase();
-      if (label === 'set') {
-        // după ce aplicația a actualizat starea, re-enforce pe SVG și autosave în istoric
-        setTimeout(function(){
-          enforceSvgRound(document);
-          if (typeof window.pushHistoryCoalesced === 'function') {
-            window.pushHistoryCoalesced('thickness-change', 400);
-          } else if (window.LCS && typeof window.LCS.push === 'function') {
-            window.LCS.push('thickness-change');
-          }
-        }, 0);
-      }
-    }, true);
-  })();
-  </script>
+  // Hook pe “Set” (grosimi)
+  document.addEventListener('click', function(e){
+    var t=e.target; if (!t || t.tagName!=='BUTTON') return;
+    var label=(t.textContent||'').trim().toLowerCase();
+    if (label==='set'){
+      setTimeout(function(){
+        enforceSvgRound(document);
+        try {
+          if (typeof window.pushHistoryCoalesced==='function') window.pushHistoryCoalesced('thickness-change', 400);
+          else if (window.LCS && typeof window.LCS.push==='function') window.LCS.push('thickness-change');
+        } catch(_){}
+      }, 0);
+    }
+  }, true);
+})();
+</script>
   <!-- Cleanup: remove all dev/test banners (Codex & Kilo) -->
   <script>
   (function(){
