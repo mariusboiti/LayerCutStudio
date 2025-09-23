@@ -2995,6 +2995,215 @@
     window.pushHistory = function(){ try { window.LCS.history.push('manual'); } catch(_){ } };
   })();
   </script>
+  <!-- Align & Distribute (floating toolbar) -->
+  <style>
+    #lcs-alignbar{position:fixed;right:16px;bottom:84px;z-index:99990;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.15);padding:8px}
+    #lcs-alignbar .row{display:flex;gap:6px;margin:6px 4px}
+    #lcs-alignbar button{width:34px;height:34px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;cursor:pointer;font:600 14px/1 system-ui}
+    #lcs-alignbar button:hover{background:#f3f4f6}
+    #lcs-alignbar .ttl{font:700 12px/1 system-ui;color:#374151;margin:2px 4px 0}
+  </style>
+  <div id="lcs-alignbar" title="Align & Distribute">
+    <div class="ttl">Align</div>
+    <div class="row">
+      <button id="al-left"  title="Align Left">⟸</button>
+      <button id="al-center" title="Align Center">↔</button>
+      <button id="al-right" title="Align Right">⟹</button>
+    </div>
+    <div class="row">
+      <button id="al-top" title="Align Top">⟰</button>
+      <button id="al-middle" title="Align Middle">↕</button>
+      <button id="al-bottom" title="Align Bottom">⟱</button>
+    </div>
+    <div class="ttl">Distribute</div>
+    <div class="row">
+      <button id="ds-h" title="Distribute Horizontally">═╪═</button>
+      <button id="ds-v" title="Distribute Vertically">║╫║</button>
+    </div>
+  </div>
+  <script>
+  (function(){
+    if (window.__LCS_ALIGN_INSTALLED__) return; window.__LCS_ALIGN_INSTALLED__=true;
+
+    // ------- helpers -------
+    function qsa(sel,root){ return Array.from((root||document).querySelectorAll(sel)); }
+    function editable(el){ if(!el) return false; const t=(el.tagName||'').toLowerCase(); return ['input','textarea','select'].includes(t)||!!el.isContentEditable; }
+    function getMainSVG(){
+      const svgs = qsa('svg');
+      if (!svgs.length) return null;
+      function area(svg){
+        const vb=(svg.getAttribute('viewBox')||'').trim().split(/\s+/).map(Number);
+        if (vb.length===4 && vb.every(isFinite)) return Math.abs(vb[2]*vb[3]);
+        const r=svg.getBoundingClientRect(); return Math.abs(r.width*r.height)||0;
+      }
+      return svgs.sort((a,b)=>area(b)-area(a))[0];
+    }
+    function getBBoxSafe(el){
+      try{ const b=el.getBBox(); return {x:b.x,y:b.y,w:b.width,h:b.height,cx:b.x+b.width/2,cy:b.y+b.height/2}; }catch(_){ return null; }
+    }
+    function parseTransform(tr){
+      tr=tr||''; const m=tr.match(/translate\(([^)]+)\)/i);
+      if(!m) return {tx:0,ty:0,rest:tr};
+      const parts=m[1].split(/[, ]+/).map(Number); return {tx:parts[0]||0,ty:parts[1]||0,rest:tr.replace(m[0],'').trim()};
+    }
+    function setTranslate(el,dx,dy){
+      const t=parseTransform(el.getAttribute('transform'));
+      const ntx=(t.tx||0)+dx, nty=(t.ty||0)+dy;
+      const rest=t.rest ? (t.rest+' ') : '';
+      el.setAttribute('transform', rest + 'translate(' + ntx + ',' + nty + ')');
+    }
+
+    // ------- selection detection -------
+    function selectedDom(){
+      const root=getMainSVG()||document;
+      let els = qsa('[data-selected="1"]',root);
+      if(!els.length) els = qsa('[aria-selected="true"]',root);
+      if(!els.length) els = qsa('.selected',root);
+      // fallback: dacă nu e nimic marcat, ia elementele cu data-lcs-id prezente în selection din state
+      if(!els.length){
+        try{
+          if (typeof window.getSnapshot==='function'){
+            const s=window.getSnapshot()||{};
+            const sel = Array.isArray(s.selection) ? s.selection : (s.selection ? [s.selection] : []);
+            if (sel.length){
+              sel.forEach(id=>{
+                const cand = document.querySelector('[data-lcs-id="'+id+'"], [data-id="'+id+'"], #'+CSS.escape(id));
+                if (cand) els.push(cand);
+              });
+            }
+          }
+        }catch(_){ }
+      }
+      return els;
+    }
+
+    // ------- state align (preferred) -------
+    function tryAlignInState(kind){
+      try{
+        if (typeof window.getSnapshot!=='function' || typeof window.applySnapshot!=='function') return false;
+        const snap = window.getSnapshot() || {};
+        const sel = Array.isArray(snap.selection) ? snap.selection : (snap.selection ? [snap.selection] : []);
+        if (!sel.length) return false;
+        // Colectează elemente candidate din snap (stickers / layers items cu id)
+        const items = [];
+        function addIf(obj){ if(!obj) return; const id=obj.id||obj.key||obj.uuid; if(id && sel.includes(id)) items.push(obj); }
+        if (Array.isArray(snap.stickers)) snap.stickers.forEach(addIf);
+        if (Array.isArray(snap.layers))   snap.layers.forEach(addIf);
+        // dacă nu găsim după id, ieșim pe fallback
+        if (items.length<2) return false;
+        // avem nevoie de poziții x/y (dacă lipsesc, fallback DOM)
+        if (items.some(it=>typeof it.x!=='number' || typeof it.y!=='number')) return false;
+        // bounding box aproximat (fără w/h – aliniem pe x/y sau centru dacă există w/h)
+        const xs = items.map(it=>it.x), ys = items.map(it=>it.y);
+        const minX=Math.min.apply(null,xs), maxX=Math.max.apply(null,xs), minY=Math.min.apply(null,ys), maxY=Math.max.apply(null,ys);
+        const cx=(minX+maxX)/2, cy=(minY+maxY)/2;
+        items.forEach(it=>{
+          if (kind==='left')   it.x = minX;
+          if (kind==='center') it.x = cx;
+          if (kind==='right')  it.x = maxX;
+          if (kind==='top')    it.y = minY;
+          if (kind==='middle') it.y = cy;
+          if (kind==='bottom') it.y = maxY;
+        });
+        window.applySnapshot(snap);
+        if (window.LCS && window.LCS.history) { try{ window.LCS.history.push('align-'+kind); }catch(_){ } }
+        return true;
+      }catch(_){ return false; }
+    }
+
+    // ------- DOM align fallback -------
+    function alignDom(kind){
+      const els = selectedDom();
+      if (els.length<2) return;
+      // calculează bounding box comun
+      const boxes = els.map(el=>({el:el, bb:getBBoxSafe(el)})).filter(x=>!!x.bb);
+      if (boxes.length<2) return;
+      const minX = Math.min.apply(null, boxes.map(b=>b.bb.x));
+      const maxX = Math.max.apply(null, boxes.map(b=>b.bb.x + b.bb.w));
+      const minY = Math.min.apply(null, boxes.map(b=>b.bb.y));
+      const maxY = Math.max.apply(null, boxes.map(b=>b.bb.y + b.bb.h));
+      const cX = (minX+maxX)/2, cY=(minY+maxY)/2;
+      boxes.forEach(b=>{
+        const {x,y,w,h,cx,cy}=b.bb;
+        let dx=0, dy=0;
+        if (kind==='left')   dx = minX - x;
+        if (kind==='center') dx = cX - cx;
+        if (kind==='right')  dx = maxX - (x+w);
+        if (kind==='top')    dy = minY - y;
+        if (kind==='middle') dy = cY - cy;
+        if (kind==='bottom') dy = maxY - (y+h);
+        if (dx||dy) setTranslate(b.el, dx, dy);
+      });
+      if (window.LCS && window.LCS.history) { try{ window.LCS.history.push('align-'+kind); }catch(_){ } }
+    }
+
+    // ------- Distribute (DOM; funcționează pe selecția curentă) -------
+    function distributeDom(axis){ // 'h' or 'v'
+      const els = selectedDom();
+      if (els.length<3) return;
+      const boxes = els.map(el=>({el:el, bb:getBBoxSafe(el)})).filter(x=>!!x.bb);
+      if (boxes.length<3) return;
+      if (axis==='h'){
+        boxes.sort((a,b)=>a.bb.cx-b.bb.cx);
+        const min = Math.min.apply(null, boxes.map(b=>b.bb.x));
+        const max = Math.max.apply(null, boxes.map(b=>b.bb.x + b.bb.w));
+        const totalW = boxes.reduce((s,b)=>s+b.bb.w,0);
+        const gaps = (boxes.length-1);
+        const gap = (max-min-totalW)/Math.max(1,gaps);
+        let cursor = min;
+        boxes.forEach((b)=>{
+          const dx = cursor - b.bb.x;
+          if (dx) setTranslate(b.el, dx, 0);
+          cursor += b.bb.w + gap;
+        });
+      } else {
+        boxes.sort((a,b)=>a.bb.cy-b.bb.cy);
+        const min = Math.min.apply(null, boxes.map(b=>b.bb.y));
+        const max = Math.max.apply(null, boxes.map(b=>b.bb.y + b.bb.h));
+        const totalH = boxes.reduce((s,b)=>s+b.bb.h,0);
+        const gaps = (boxes.length-1);
+        const gap = (max-min-totalH)/Math.max(1,gaps);
+        let cursor = min;
+        boxes.forEach((b)=>{
+          const dy = cursor - b.bb.y;
+          if (dy) setTranslate(b.el, 0, dy);
+          cursor += b.bb.h + gap;
+        });
+      }
+      if (window.LCS && window.LCS.history) { try{ window.LCS.history.push('distribute-'+axis); }catch(_){ } }
+    }
+
+    // ------- wiring -------
+    function doAlign(kind){
+      if (!tryAlignInState(kind)) alignDom(kind);
+    }
+    const $ = (id)=>document.getElementById(id);
+    const map = {
+      'al-left':()=>doAlign('left'),
+      'al-center':()=>doAlign('center'),
+      'al-right':()=>doAlign('right'),
+      'al-top':()=>doAlign('top'),
+      'al-middle':()=>doAlign('middle'),
+      'al-bottom':()=>doAlign('bottom'),
+      'ds-h':()=>distributeDom('h'),
+      'ds-v':()=>distributeDom('v'),
+    };
+    Object.keys(map).forEach(id=>{ const el=$(id); if(el) el.onclick=map[id]; });
+
+    // Shortcuts: Shift+A deschide focus pe toolbar (nu e modal), Alt+Arrow pentru align rapid
+    window.addEventListener('keydown', function(e){
+      if (editable(e.target)) return;
+      const k=(e.key||'').toLowerCase();
+      if (e.shiftKey && k==='a'){ e.preventDefault(); try{ document.getElementById('al-center').focus(); }catch(_){ } }
+      if (e.altKey){
+        if (k==='arrowleft'){ e.preventDefault(); doAlign('left'); }
+        if (k==='arrowright'){ e.preventDefault(); doAlign('right'); }
+        if (k==='arrowup'){ e.preventDefault(); doAlign('top'); }
+        if (k==='arrowdown'){ e.preventDefault(); doAlign('bottom'); }
+      }
+    }, {passive:false});
+  })();
+  </script>
   <!-- Command Palette (Ctrl+K) -->
   <style>
     #lcs-cmdk { display:none; position:fixed; inset:0; z-index:99998; background:rgba(0,0,0,.35); align-items:flex-start; justify-content:center; padding-top:10vh; }
