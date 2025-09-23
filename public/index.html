@@ -3093,5 +3093,46 @@
     }, {passive:false});
   })();
   </script>
+  <!-- Shortcuts Help (Ctrl+/) -->
+  <style>
+    #lcs-help{display:none;position:fixed;inset:0;z-index:99996;background:rgba(0,0,0,.35);align-items:flex-start;justify-content:center;padding-top:8vh}
+    #lcs-help .box{width:min(760px,92vw);background:#fff;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.35);padding:16px}
+    #lcs-help h3{margin:0 0 8px;font:700 16px system-ui}
+    #lcs-help ul{margin:0;padding-left:18px}
+    #lcs-help li{margin:6px 0}
+    #lcs-help .kbd{font:600 11px system-ui;background:#eef2ff;color:#111827;border:1px solid #e5e7eb;border-radius:6px;padding:2px 6px}
+  </style>
+  <div id="lcs-help">
+    <div class="box">
+      <h3>Shortcuts</h3>
+      <ul>
+        <li><span class="kbd">Ctrl</span> + <span class="kbd">Z</span> – Undo</li>
+        <li><span class="kbd">Ctrl</span> + <span class="kbd">Shift</span> + <span class="kbd">Z</span> / <span class="kbd">Ctrl</span> + <span class="kbd">Y</span> – Redo</li>
+        <li><span class="kbd">Ctrl</span> + <span class="kbd">S</span> – Save • <span class="kbd">Ctrl</span> + <span class="kbd">O</span> – Import</li>
+        <li><span class="kbd">Ctrl</span> + <span class="kbd">=</span>/<span class="kbd">+</span> / <span class="kbd">-</span> / <span class="kbd">0</span> – Zoom in/out/reset</li>
+        <li><span class="kbd">Ctrl</span> + <span class="kbd">K</span> – Command Palette</li>
+        <li><span class="kbd">Alt</span> + <span class="kbd">↑↓←→</span> – Align to edges • <span class="kbd">Shift</span> + <span class="kbd">A</span> – Focus Align bar</li>
+        <li><span class="kbd">Arrow</span> / <span class="kbd">Shift</span> + <span class="kbd">Arrow</span> – Nudge 1px / 10px</li>
+        <li><span class="kbd">Ctrl</span> + <span class="kbd">'</span> – Toggle Grid</li>
+      </ul>
+      <div style="margin-top:10px;text-align:right">
+        <button id="lcs-help-close" style="border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:8px 10px;cursor:pointer">Close</button>
+      </div>
+    </div>
+  </div>
+  <script>
+  (function(){
+    if (window.__LCS_HELP__) return; window.__LCS_HELP__=true;
+    var wrap=document.getElementById('lcs-help'), btn=document.getElementById('lcs-help-close');
+    function open(){ wrap.style.display='flex'; }
+    function close(){ wrap.style.display='none'; }
+    btn && (btn.onclick=close);
+    wrap.onclick=function(e){ if(e.target===wrap) close(); };
+    window.addEventListener('keydown', function(e){
+      if ((e.ctrlKey||e.metaKey) && (e.key==='/')) { e.preventDefault(); open(); }
+      if (e.key==='Escape' && wrap.style.display!=='none'){ e.preventDefault(); close(); }
+    }, {passive:false});
+  })();
+  </script>
 </body>
 </html>
