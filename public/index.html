@@ -198,28 +198,116 @@
  </script>
 <body>
 
-    <!-- === PATCH: Sidebar fix left + Canvas flex === -->
-    <style>
-      .app-layout {
-        display: flex;
+    <!-- === PATCH: Sidebar lipit stânga + Canvas pe restul (stabil, limitat la #app) === -->
+    <style id="lcs-layout-flex-css">
+      /* Părintele comun (aplicat dinamic pe containerul #app) */
+      .lcs-app-flex {
+        display: flex !important;
         width: 100%;
         height: calc(100vh - 64px);
+        gap: 0 !important;
+        align-items: stretch !important;
+        box-sizing: border-box;
         overflow: hidden;
       }
-      .app-layout .sidebar {
-        width: 320px; /* fix, modifică după gust */
+      /* Col stânga (formular) */
+      .lcs-app-sidebar {
+        width: 340px;                 /* ajustează 300–380px la nevoie */
         min-width: 280px;
-        max-width: 400px;
+        max-width: 420px;
         border-right: 1px solid #e5e7eb;
-        overflow-y: auto;
         background: #fff;
+        overflow: auto;
+        margin: 0 !important;
+        padding-left: 0 !important;
       }
-      .app-layout .canvas {
-        flex: 1 1 auto;
+      /* Col dreapta (canvas) */
+      .lcs-app-canvas {
+        flex: 1 1 auto !important;
+        min-width: 0;
         overflow: hidden;
         background: #fafafa;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      @media (max-width: 1024px){
+        .lcs-app-sidebar { width: 300px; }
+        .lcs-app-flex { height: auto; }
       }
     </style>
+    <script>
+    (function(){
+      if (window.__LCS_LAYOUT_FINAL__) return; window.__LCS_LAYOUT_FINAL__=true;
+
+      function q(sel, root){ return (root||document).querySelector(sel); }
+      function qa(sel, root){ return Array.from((root||document).querySelectorAll(sel)); }
+
+      function findSidebar(app){
+        // caută un container din #app care conține texte specifice formularului
+        var hints = ['Font','Text (rând','Stickere','Transform','Unități','Rotunjit'];
+        var sections = qa(':scope div, :scope section, :scope aside', app);
+        function score(n){
+          var txt = (n.textContent||'').toLowerCase();
+          var s = 0;
+          hints.forEach(h => { if (txt.indexOf(h.toLowerCase()) >= 0) s += 1; });
+          s += Math.min(3, n.querySelectorAll('input,select,button,label,textarea').length / 12);
+          // foarte multe SVG-uri = probabil NU e sidebar
+          s -= Math.min(2, n.querySelectorAll('svg').length / 4);
+          // să nu fie imens cât tot ecranul
+          var r = n.getBoundingClientRect();
+          if (r.width > 220 && r.width < window.innerWidth*0.65) s += 0.5;
+          return s;
+        }
+        var best=null, bs=0;
+        sections.forEach(n => { var sc=score(n); if(sc>bs){ bs=sc; best=n; } });
+        return best;
+      }
+
+      function findCanvas(app){
+        // cel mai mare <svg> din #app; întoarce containerul său direct rezonabil
+        var svgs = qa('svg', app);
+        if (!svgs.length) return null;
+        svgs.sort(function(a,b){
+          var ra=a.getBoundingClientRect(), rb=b.getBoundingClientRect();
+          return (rb.width*rb.height) - (ra.width*ra.height);
+        });
+        var host = svgs[0].closest(':scope div, :scope section, :scope main') || svgs[0].parentElement;
+        return host;
+      }
+
+      function commonParent(a,b, stopAt){
+        // cel mai apropiat părinte comun în interiorul #app
+        var seen=new Set();
+        for (var x=a; x && x!==stopAt; x=x.parentElement) seen.add(x);
+        for (var y=b; y && y!==stopAt; y=y.parentElement) if (seen.has(y)) return y;
+        return null;
+      }
+
+      function applyLayout(){
+        var app = q('#app');
+        if (!app) return;
+        // nu aplica în afara #app
+        var sidebar = findSidebar(app);
+        var canvas  = findCanvas(app);
+        if (!sidebar || !canvas) return;
+        var parent = commonParent(sidebar, canvas, app.parentElement) || app;
+
+        // marchează clar doar în interiorul lui #app
+        parent.classList.add('lcs-app-flex');
+        sidebar.classList.add('lcs-app-sidebar');
+        canvas.classList.add('lcs-app-canvas');
+      }
+
+      // aplică acum și după montarea UI-ului
+      applyLayout();
+      var mo = new MutationObserver(() => applyLayout());
+      mo.observe(document.getElementById('app') || document.body, { childList:true, subtree:true });
+      window.addEventListener('resize', applyLayout, {passive:true});
+    })();
+    </script>
     <!-- === /PATCH === -->
 
 <!-- === PATCH: Temp hide Outline & Hatch panels (+ Alt+Shift+H toggle) === -->
