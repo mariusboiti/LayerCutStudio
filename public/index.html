@@ -3093,5 +3093,155 @@
     }, {passive:false});
   })();
   </script>
+  <!-- Safari Kit • PATCH 3: Giraffe sticker -->
+  <style>
+    #safari-animals {
+      position: fixed;
+      right: 16px;
+      top: 368px;
+      z-index: 99990;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      box-shadow: 0 6px 24px rgba(0, 0, 0, .15);
+      padding: 10px;
+      min-width: 220px;
+    }
+    #safari-animals button {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #fff;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+  </style>
+  <div id="safari-animals">
+    <button id="sf-giraffe">🦒 Add Giraffe</button>
+  </div>
+  <script>
+  (function(){
+    if (window.__SAFARI_GIRAFFE__) return; window.__SAFARI_GIRAFFE__ = true;
+    function mainSVG(){
+      var list = [].slice.call(document.querySelectorAll('svg'));
+      if (!list.length) return null;
+      list.sort(function(a, b){
+        function area(el){
+          var vb = (el.getAttribute('viewBox') || '').split(/\s+/).map(Number);
+          if (vb.length === 4 && vb.every(isFinite)) return vb[2] * vb[3];
+          var r = el.getBoundingClientRect();
+          return r.width * r.height || 0;
+        }
+        return area(b) - area(a);
+      });
+      return list[0];
+    }
+    function layer(){
+      var svg = mainSVG();
+      if (!svg) return null;
+      var group = svg.querySelector('g.lcs-safari');
+      if (!group){
+        group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        group.setAttribute('class', 'lcs-safari');
+        svg.appendChild(group);
+      }
+      return group;
+    }
+    function vb(){
+      var svg = mainSVG();
+      if (!svg) return { cx: 0, cy: 0 };
+      var box = (svg.getAttribute('viewBox') || '').split(/\s+/).map(Number);
+      if (box.length === 4 && box.every(isFinite)) {
+        return { cx: box[0] + box[2] / 2, cy: box[1] + box[3] / 2 };
+      }
+      var rect = svg.getBoundingClientRect();
+      return { cx: rect.width / 2, cy: rect.height / 2 };
+    }
+    function addGiraffe(){
+      var target = layer();
+      var center = vb();
+      if (!target) return;
+      var grp = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      grp.setAttribute('class', 'safari giraffe selected');
+      grp.setAttribute('data-selected', '1');
+      grp.setAttribute('transform', 'translate(' + (center.cx - 180) + ',' + (center.cy + 40) + ')');
+      grp.setAttribute('data-export', 'true');
+      grp.setAttribute('tabindex', '0');
+
+      var neck = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      neck.setAttribute('x', '50');
+      neck.setAttribute('y', '70');
+      neck.setAttribute('rx', '14');
+      neck.setAttribute('ry', '14');
+      neck.setAttribute('width', '38');
+      neck.setAttribute('height', '110');
+      neck.setAttribute('fill', '#ffd79e');
+      neck.setAttribute('stroke', '#7a4f2a');
+      neck.setAttribute('stroke-width', '3');
+      grp.appendChild(neck);
+
+      var head = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      head.setAttribute('d', 'M40,40 C40,15 120,15 120,40 C125,80 115,110 80,120 C45,110 35,80 40,40 Z');
+      head.setAttribute('fill', '#ffe6b8');
+      head.setAttribute('stroke', '#7a4f2a');
+      head.setAttribute('stroke-width', '3');
+      grp.appendChild(head);
+
+      var snout = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+      snout.setAttribute('cx', '80');
+      snout.setAttribute('cy', '100');
+      snout.setAttribute('rx', '34');
+      snout.setAttribute('ry', '24');
+      snout.setAttribute('fill', '#f3b17f');
+      grp.appendChild(snout);
+
+      var eye1 = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      eye1.setAttribute('cx', '65');
+      eye1.setAttribute('cy', '78');
+      eye1.setAttribute('r', '4');
+      eye1.setAttribute('fill', '#2b2b2b');
+      grp.appendChild(eye1);
+
+      var eye2 = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      eye2.setAttribute('cx', '95');
+      eye2.setAttribute('cy', '78');
+      eye2.setAttribute('r', '4');
+      eye2.setAttribute('fill', '#2b2b2b');
+      grp.appendChild(eye2);
+
+      var horn1 = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      horn1.setAttribute('cx', '60');
+      horn1.setAttribute('cy', '25');
+      horn1.setAttribute('r', '7');
+      horn1.setAttribute('fill', '#d59b6a');
+      grp.appendChild(horn1);
+
+      var horn2 = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      horn2.setAttribute('cx', '100');
+      horn2.setAttribute('cy', '25');
+      horn2.setAttribute('r', '7');
+      horn2.setAttribute('fill', '#d59b6a');
+      grp.appendChild(horn2);
+
+      function spot(x, y, r){
+        var c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        c.setAttribute('cx', x);
+        c.setAttribute('cy', y);
+        c.setAttribute('r', r);
+        c.setAttribute('fill', '#e2a063');
+        grp.appendChild(c);
+      }
+      spot(64, 150, 8);
+      spot(84, 160, 7);
+      spot(70, 180, 6);
+
+      target.appendChild(grp);
+      try {
+        window.LCS && window.LCS.history && window.LCS.history.push('giraffe-add');
+      } catch (_err) {}
+    }
+    var btn = document.getElementById('sf-giraffe');
+    if (btn) btn.onclick = addGiraffe;
+  })();
+  </script>
 </body>
 </html>
