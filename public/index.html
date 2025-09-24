@@ -4072,6 +4072,147 @@
     }, {passive:false});
   })();
   </script>
+  <!-- LASER OPS • PATCH 4: Hatch Engrave -->
+  <style>
+    #hatch-box{
+      position:fixed;right:16px;top:412px;z-index:99993;background:#fff;
+      border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.15);
+      padding:10px;min-width:260px
+    }
+    #hatch-box .row{display:flex;gap:6px;align-items:center;margin:6px 0}
+  </style>
+  <div id="hatch-box" data-export="false">
+    <div class="row">
+      <label style="width:90px">Spacing (mm)</label>
+      <input id="hatch-mm" type="number" min="0.1" step="0.1" value="0.6" style="width:84px">
+    </div>
+    <div class="row">
+      <label style="width:90px">Angle (°)</label>
+      <input id="hatch-ang" type="number" min="0" max="180" step="1" value="45" style="width:84px">
+    </div>
+    <div class="row">
+      <button id="hatch-preview">Preview Hatch</button>
+      <button id="hatch-export">Export Hatch SVG</button>
+    </div>
+  </div>
+  <script>
+  (function(){
+    if (window.__LASER_HATCH__) return; window.__LASER_HATCH__=true;
+
+    // Asigură paper-full dacă nu există deja (se folosește și de PATCH 3/2)
+    function ensurePaper(cb){
+      if (typeof paper!=='undefined') return cb();
+      var s=document.createElement('script');
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/paper.js/0.12.17/paper-full.min.js';
+      s.onload=cb; document.head.appendChild(s);
+    }
+
+    function mainSVG(){
+      var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
+      a.sort(function(A,B){
+        function ar(x){
+          var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
+          if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];
+          var r=x.getBoundingClientRect(); return r.width*r.height||0;
+        }
+        return ar(B)-ar(A);
+      });
+      return a[0];
+    }
+    function cloneMain(){ var m=mainSVG(); return m? m.cloneNode(true):null; }
+
+    function toProject(svg){
+      var c=document.createElement('canvas'); paper.setup(c);
+      var s=new XMLSerializer().serializeToString(svg);
+      if(!/xmlns=/.test(s)) s=s.replace('<svg','<svg xmlns="http://www.w3.org/2000/svg"');
+      paper.project.importSVG(s,{expandShapes:true,insert:true});
+      return paper.project;
+    }
+    function fromProject(pr){
+      var str=pr.exportSVG({asString:true,precision:2});
+      var doc=(new DOMParser()).parseFromString(str,'image/svg+xml');
+      return document.importNode(doc.documentElement,true);
+    }
+
+    function hatch(svg, mm, ang){
+      var pr=toProject(svg), PX=96/25.4;
+      var step=Math.max(0.1, Number(mm||0.6))*PX;
+      var angle=(Number(ang)||45)*Math.PI/180;
+
+      var rect=pr.view.bounds;
+      var len=Math.hypot(rect.width, rect.height)*1.5;
+
+      var lines=new paper.Group();
+      var dir=new paper.Point(Math.cos(angle), Math.sin(angle));
+      var normal=new paper.Point(-Math.sin(angle), Math.cos(angle));
+      var n=Math.ceil((rect.width+rect.height)/step)+2;
+      var start=rect.center.subtract(dir.multiply(len/2)).subtract(normal.multiply(n*step/2));
+
+      for (var i=0;i<n;i++){
+        var p=start.add(normal.multiply(i*step));
+        var l=new paper.Path.Line(p, p.add(dir.multiply(len)));
+        l.strokeColor='black'; l.strokeWidth=1; l.fillColor=null;
+        lines.addChild(l);
+      }
+
+      // intersectăm cu zonele umplute (engrave)
+      pr.getItems({class:paper.PathItem}).forEach(function(item){
+        try{
+          if (item.fillColor && item.fillColor.alpha>0){
+            var clipped=lines.intersect(item);
+            lines.remove(); item.remove();
+            lines = clipped;
+          }
+        }catch(_){}
+      });
+
+      // normalizează: stroke vizibil, fără fill
+      lines.getItems({class:paper.PathItem}).forEach(function(p){
+        p.fillColor=null; p.strokeColor='black'; p.strokeWidth=0.2;
+      });
+
+      return fromProject(pr);
+    }
+
+    function download(svg,name){
+      var xmlHead='<?xml version="1.0" encoding="UTF-8"?>\n';
+      var s=new XMLSerializer().serializeToString(svg);
+      if(!/xmlns=/.test(s)) s=s.replace('<svg','<svg xmlns="http://www.w3.org/2000/svg"');
+      var blob=new Blob([xmlHead+s],{type:'image/svg+xml'});
+      var url=URL.createObjectURL(blob);
+      var a=document.createElement('a'); a.href=url; a.download=name||'layercut-hatch.svg';
+      document.body.appendChild(a); a.click();
+      setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); },0);
+    }
+
+    function init(){
+      var btnPrev=document.getElementById('hatch-preview');
+      var btnExp=document.getElementById('hatch-export');
+      function run(action){
+        var base=cloneMain(); if(!base){ alert('No SVG'); return; }
+        var out=hatch(base, document.getElementById('hatch-mm').value, document.getElementById('hatch-ang').value);
+        if(action==='preview'){ var w=window.open(); if(w&&w.document) w.document.write(out.outerHTML); }
+        else download(out,'layercut-hatch.svg');
+      }
+      btnPrev && (btnPrev.onclick=function(){ run('preview'); });
+      btnExp && (btnExp.onclick=function(){ run('export'); });
+
+      // Mută în dock dacă există
+      try{
+        var box=document.getElementById('hatch-box');
+        var dock=document.getElementById('tools-dock');
+        if (box && dock){
+          var wrap=document.createElement('div'); wrap.className='dock-section';
+          var h=document.createElement('div'); h.className='dock-title'; h.textContent='Hatch Engrave';
+          wrap.appendChild(h); wrap.appendChild(box); dock.appendChild(wrap);
+        }
+      }catch(_){}
+    }
+
+    ensurePaper(init);
+  })();
+  </script>
+
   <!-- LASER OPS • PATCH 3: Text→Outlines + Expand Stroke -->
   <style>
     #outline-box{
@@ -4082,9 +4223,7 @@
     #outline-box .row{display:flex;gap:6px;align-items:center;margin:6px 0}
   </style>
   <div id="outline-box" data-export="false">
-    <div class="row">
-      <button id="btn-text-outlines">Convert Text → Outlines (clone)</button>
-    </div>
+    <div class="row"><button id="btn-text-outlines">Convert Text → Outlines (clone)</button></div>
     <div class="row">
       <label style="width:110px">Expand Stroke (mm)</label>
       <input id="expand-mm" type="number" min="0" step="0.01" value="0.00" style="width:84px">
@@ -4095,153 +4234,148 @@
   (function(){
     if (window.__LASER_OUTLINES__) return; window.__LASER_OUTLINES__=true;
 
-    // Asigură Paper.js full (dacă n-a fost deja încărcat în <head>)
-    if (typeof paper === 'undefined') {
+    function ensurePaper(cb){
+      if (typeof paper!=='undefined') return cb();
       var s=document.createElement('script');
       s.src='https://cdnjs.cloudflare.com/ajax/libs/paper.js/0.12.17/paper-full.min.js';
-      s.onload=init;
-      document.head.appendChild(s);
-    } else {
-      init();
+      s.onload=cb; document.head.appendChild(s);
     }
 
-    function init(){
-      if (typeof paper === 'undefined'){ console.warn('[outline-box] paper.js missing'); return; }
+    function mainSVG(){
+      var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
+      a.sort(function(A,B){
+        function ar(x){
+          var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
+          if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];
+          var r=x.getBoundingClientRect();return r.width*r.height||0;
+        }
+        return ar(B)-ar(A);
+      });
+      return a[0];
+    }
+    function cloneMain(){ var m=mainSVG(); return m? m.cloneNode(true):null; }
+    function ensureNamespace(svg){
+      if(!svg) return svg;
+      if(!svg.getAttribute('xmlns')) svg.setAttribute('xmlns','http://www.w3.org/2000/svg');
+      if(!svg.getAttribute('xmlns:xlink')) svg.setAttribute('xmlns:xlink','http://www.w3.org/1999/xlink');
+      return svg;
+    }
+    function copyAttributes(src,dst){
+      if(!src||!dst) return dst;
+      var attrs=src.attributes;
+      for(var i=0;i<attrs.length;i++){ var at=attrs[i]; dst.setAttribute(at.name, at.value); }
+      return dst;
+    }
+    function toPaper(svg){
+      var c=document.createElement('canvas'); paper.setup(c);
+      var s=new XMLSerializer().serializeToString(svg);
+      if(!/xmlns=/.test(s)) s=s.replace('<svg','<svg xmlns="http://www.w3.org/2000/svg"');
+      paper.project.importSVG(s,{expandShapes:true, insert:true});
+      return paper.project;
+    }
+    function fromPaper(pr, original){
+      var str=pr.exportSVG({asString:true,precision:2});
+      var doc=(new DOMParser()).parseFromString(str,'image/svg+xml');
+      var node=document.importNode(doc.documentElement,true);
+      if(original) copyAttributes(original,node);
+      ensureNamespace(node);
+      return node;
+    }
+    function runPaper(svg, fn){
+      if(!svg) return null;
+      var pr=toPaper(svg);
+      try{ fn && fn(pr); return fromPaper(pr, svg); }
+      finally { try{ pr && pr.remove && pr.remove(); }catch(_){ } }
+    }
 
-      function mainSVG(){
-        var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
-        a.sort(function(A,B){
-          function ar(x){
-            var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
-            if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];
-            var r=x.getBoundingClientRect();return r.width*r.height||0;
-          }
-          return ar(B)-ar(A);
+    function textToOutlines(svg){
+      return runPaper(svg, function(pr){
+        pr.getItems({class:paper.PointText}).forEach(function(t){
+          try{
+            var fill = t.fillColor ? (t.fillColor.clone ? t.fillColor.clone() : t.fillColor) : null;
+            var group = t.createOutline();
+            t.remove();
+            if(group && group.children){
+              group.children.forEach(function(child){
+                if(fill){ child.fillColor = fill.clone ? fill.clone() : fill; }
+                child.strokeColor = null;
+              });
+            }
+          }catch(_){ }
         });
-        return a[0];
-      }
-      function cloneMain(){ var m=mainSVG(); return m? m.cloneNode(true):null; }
-      function ensureNamespace(svg){
-        if(!svg) return svg;
-        if(!svg.getAttribute('xmlns')) svg.setAttribute('xmlns','http://www.w3.org/2000/svg');
-        if(!svg.getAttribute('xmlns:xlink')) svg.setAttribute('xmlns:xlink','http://www.w3.org/1999/xlink');
-        return svg;
-      }
-      function copyAttributes(src,dst){
-        if(!src||!dst) return dst;
-        var attrs=src.attributes;
-        for(var i=0;i<attrs.length;i++){ var at=attrs[i]; dst.setAttribute(at.name, at.value); }
-        return dst;
-      }
-      function toPaper(svg){
-        var c=document.createElement('canvas'); paper.setup(c);
-        var s=new XMLSerializer().serializeToString(svg);
-        if(!/xmlns=/.test(s)) s=s.replace('<svg','<svg xmlns="http://www.w3.org/2000/svg"');
-        paper.project.importSVG(s,{expandShapes:true, insert:true});
-        return paper.project;
-      }
-      function fromPaper(pr, original){
-        var str=pr.exportSVG({asString:true,precision:2});
-        var doc=(new DOMParser()).parseFromString(str,'image/svg+xml');
-        var node=document.importNode(doc.documentElement,true);
-        if(original) copyAttributes(original,node);
-        ensureNamespace(node);
-        return node;
-      }
-      function runPaper(svg, fn){
-        if(!svg) return null;
-        var pr=toPaper(svg);
-        try{ fn && fn(pr); return fromPaper(pr, svg); }
-        finally { try{ pr && pr.remove && pr.remove(); }catch(_){ } }
-      }
+      });
+    }
 
-      function textToOutlines(svg){
-        return runPaper(svg, function(pr){
-          pr.getItems({class:paper.PointText}).forEach(function(t){
-            try{
-              var fill = t.fillColor ? (t.fillColor.clone ? t.fillColor.clone() : t.fillColor) : null;
-              var group = t.createOutline();
-              t.remove();
-              if(group && group.children){
-                group.children.forEach(function(child){
-                  if(fill){ child.fillColor = fill.clone ? fill.clone() : fill; }
-                  child.strokeColor = null;
-                });
+    function expandStroke(svg, mm){
+      var px=96/25.4, amount=Math.max(0,Number(mm||0)*px);
+      if (!amount) return svg;
+      return runPaper(svg, function(pr){
+        pr.getItems({class:paper.PathItem}).forEach(function(p){
+          try{
+            if (!(p.strokeWidth && p.strokeWidth>0)) return;
+            var ex=p.expand(p.strokeWidth + amount*2);
+            if (!ex) return;
+
+            var fillClone = null;
+            if (p.fillColor){
+              try{ fillClone = p.clone(); }catch(_){ fillClone = null; }
+              if (fillClone){
+                fillClone.strokeWidth = 0;
+                fillClone.strokeColor = null;
               }
-            }catch(_){ }
-          });
+            }
+
+            ex.strokeWidth=0; ex.strokeColor=null;
+            if (p.strokeColor) ex.fillColor = p.strokeColor.clone ? p.strokeColor.clone() : p.strokeColor;
+
+            var parent = p.parent, index = p.index;
+            if (fillClone && parent){ parent.insertChild(index, fillClone); index++; }
+            if (parent){ parent.insertChild(index, ex); p.remove(); }
+            else { p.replaceWith(ex); }
+          }catch(_){ }
         });
-      }
+      });
+    }
 
-      function expandStroke(svg, mm){
-        var px=96/25.4, amount=Math.max(0,Number(mm||0)*px);
-        if (!amount) return svg;
-        return runPaper(svg, function(pr){
-          pr.getItems({class:paper.PathItem}).forEach(function(p){
-            try{
-              if (!(p.strokeWidth && p.strokeWidth>0)) return;
-              var ex=p.expand(p.strokeWidth + amount*2);
-              if (!ex) return;
+    function download(svg,name){
+      if(!svg) return;
+      ensureNamespace(svg);
+      var xmlHead='<?xml version="1.0" encoding="UTF-8"?>\n';
+      var s=new XMLSerializer().serializeToString(svg);
+      var blob=new Blob([xmlHead+s],{type:'image/svg+xml'});
+      var url=URL.createObjectURL(blob);
+      var a=document.createElement('a'); a.href=url; a.download=name||'layercut-export.svg';
+      document.body.appendChild(a); a.click();
+      setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 100);
+    }
+    function sanitizeName(base){ return (base||'export').replace(/[^a-z0-9_-]+/gi,'-'); }
 
-              var fillClone = null;
-              if (p.fillColor){
-                try{ fillClone = p.clone(); }catch(_){ fillClone = null; }
-                if (fillClone){
-                  fillClone.strokeWidth = 0;
-                  fillClone.strokeColor = null;
-                }
-              }
+    function handleTextOutlines(){
+      var svg=cloneMain();
+      if(!svg){ alert('Main SVG not found'); return; }
+      var outlined=textToOutlines(svg);
+      if(!outlined){ alert('Failed to convert text to outlines.'); return; }
+      download(outlined, sanitizeName(document.title||'layercut')+'-outlines.svg');
+    }
+    function handleExpand(){
+      var mmEl=document.getElementById('expand-mm');
+      var mm=Number(mmEl && mmEl.value);
+      if(!Number.isFinite(mm) || mm<0) mm=0;
+      var svg=cloneMain();
+      if(!svg){ alert('Main SVG not found'); return; }
+      var outlined=textToOutlines(svg) || svg;
+      var expanded=expandStroke(outlined, mm);
+      if(!expanded){ alert('Failed to expand strokes.'); return; }
+      download(expanded, sanitizeName(document.title||'layercut')+'-expand-'+mm.toFixed(2)+'mm.svg');
+    }
 
-              ex.strokeWidth=0; ex.strokeColor=null;
-              if (p.strokeColor) ex.fillColor = p.strokeColor.clone ? p.strokeColor.clone() : p.strokeColor;
-
-              var parent = p.parent, index = p.index;
-              if (fillClone && parent){ parent.insertChild(index, fillClone); index++; }
-              if (parent){ parent.insertChild(index, ex); p.remove(); }
-              else { p.replaceWith(ex); }
-            }catch(_){ }
-          });
-        });
-      }
-
-      function download(svg,name){
-        if(!svg) return;
-        ensureNamespace(svg);
-        var xmlHead='<?xml version="1.0" encoding="UTF-8"?>\n';
-        var s=new XMLSerializer().serializeToString(svg);
-        var blob=new Blob([xmlHead+s],{type:'image/svg+xml'});
-        var url=URL.createObjectURL(blob);
-        var a=document.createElement('a'); a.href=url; a.download=name||'layercut-export.svg';
-        document.body.appendChild(a); a.click();
-        setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 100);
-      }
-      function sanitizeName(base){ return (base||'export').replace(/[^a-z0-9_-]+/gi,'-'); }
-
-      function handleTextOutlines(){
-        var svg=cloneMain();
-        if(!svg){ alert('Main SVG not found'); return; }
-        var outlined=textToOutlines(svg);
-        if(!outlined){ alert('Failed to convert text to outlines.'); return; }
-        download(outlined, sanitizeName(document.title||'layercut')+'-outlines.svg');
-      }
-      function handleExpand(){
-        var mmEl=document.getElementById('expand-mm');
-        var mm=Number(mmEl && mmEl.value);
-        if(!Number.isFinite(mm) || mm<0) mm=0;
-        var svg=cloneMain();
-        if(!svg){ alert('Main SVG not found'); return; }
-        var outlined=textToOutlines(svg) || svg;
-        var expanded=expandStroke(outlined, mm);
-        if(!expanded){ alert('Failed to expand strokes.'); return; }
-        download(expanded, sanitizeName(document.title||'layercut')+'-expand-'+mm.toFixed(2)+'mm.svg');
-      }
-
+    ensurePaper(function(){
       var btnOutline=document.getElementById('btn-text-outlines');
       var btnExpand=document.getElementById('btn-expand-export');
       if(btnOutline) btnOutline.addEventListener('click', handleTextOutlines);
       if(btnExpand) btnExpand.addEventListener('click', handleExpand);
 
-      // Dock în dreapta (dacă există #tools-dock)
+      // Mută în dock dacă există
       try{
         var box=document.getElementById('outline-box');
         var dock=document.getElementById('tools-dock');
@@ -4251,7 +4385,7 @@
           wrap.appendChild(h); wrap.appendChild(box); dock.appendChild(wrap);
         }
       }catch(_){}
-    }
+    });
   })();
   </script>
 
