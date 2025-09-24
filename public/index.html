@@ -140,7 +140,8 @@
   <script src="https://unpkg.com/opentype.js@1.3.4/dist/opentype.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/paper.js/0.12.15/paper-core.min.js" integrity="sha512-B/1GJt8BK0WRxUfHb44wSIB86ugvWK+plV4CnIaWnflHTZCV7U866CrVnSYbycHtHTP5Lx9XzVD2TFAnVb4S6g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="https://cdn.jsdelivr.net/npm/clipper-lib@6.4.2/clipper.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/paper.js/0.12.17/paper-full.min.js" integrity="sha512-olzsIoU+aMaYFEpekX2SJTgY7udW1I8j/kG+c5tct0YPYn2lkRdBW32yvAGmNw92+AoxHjot3UQlbAHcEyluEg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/paper.js/0.12.17/paper-full.min.js" integrity="sha512-olzsIoU+aMaYFEpekX2SJTgY7udW1I8j/kG+c5tct0YPYn2lkRdBW32yvAGmNw92+AoxHjot3UQlbAHcEyluEg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
 
   <style>
     :root { --ui: #e5e7eb; --grid: #eef2f7; }
@@ -4071,207 +4072,188 @@
     }, {passive:false});
   })();
   </script>
---- a/public/index.html
-+++ b/public/index.html
-@@ -1,7 +1,7 @@
- <!-- ... alte secțiuni existente ... -->
-@@ -999,7 +999,642 @@
--<<<<<<< codex/add-kerf-compensation-feature
--  <!-- LASER OPS • PATCH 2: Kerf Compensation -->
--  <style>
--    #kerf-box { position: fixed; right: 16px; top: 260px; z-index: 99993; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 8px 28px rgba(0, 0, 0, .15); padding: 10px; min-width: 260px; }
--    #kerf-box .row { display: flex; gap: 6px; align-items: center; margin: 6px 0; }
--  </style>
--  <div id="kerf-box">
--    <div class="row">
--      <label style="width: 88px">Kerf (mm)</label>
--      <input id="kerf-mm" type="number" min="0" step="0.01" value="0.15" style="width: 84px">
--      <select id="kerf-dir">
--        <option value="out">Outward</option>
--        <option value="in">Inward</option>
--      </select>
--    </div>
--    <div class="row" style="gap: 8px; flex-wrap: wrap">
--      <button id="kerf-preview">Preview kerf</button>
--      <button id="kerf-export">Export SVG w/ kerf</button>
--    </div>
--  </div>
--  <script>
--  (function(){
--    if (window.__LASER_KERF__) return;
--    window.__LASER_KERF__ = true;
-+  <!-- LASER OPS • PATCH 2: Kerf Compensation -->
-+  <style>
-+    #kerf-box { position: fixed; right: 16px; top: 260px; z-index: 99993; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 8px 28px rgba(0, 0, 0, .15); padding: 10px; min-width: 260px; }
-+    #kerf-box .row { display: flex; gap: 6px; align-items: center; margin: 6px 0; }
-+  </style>
-+  <div id="kerf-box" data-export="false">
-+    <div class="row">
-+      <label style="width: 88px">Kerf (mm)</label>
-+      <input id="kerf-mm" type="number" min="0" step="0.01" value="0.15" style="width: 84px">
-+      <select id="kerf-dir">
-+        <option value="out">Outward</option>
-+        <option value="in">Inward</option>
-+      </select>
-+    </div>
-+    <div class="row" style="gap: 8px; flex-wrap: wrap">
-+      <button id="kerf-preview">Preview kerf</button>
-+      <button id="kerf-export">Export SVG w/ kerf</button>
-+    </div>
-+  </div>
-+  <script>
-+  (function(){
-+    if (window.__LASER_KERF__) return; window.__LASER_KERF__ = true;
-+    // asigură Paper.js dacă nu e deja injectat de Laser Ops
-+    if (!window.paper) {
-+      var s=document.createElement('script'); s.src='https://unpkg.com/paper@0.12.17/dist/paper-full.min.js';
-+      document.head.appendChild(s);
-+    }
- 
-     function mainSVG(){
-       var list = Array.prototype.slice.call(document.querySelectorAll('svg'));
-       if (!list.length) return null;
-       list.sort(function(a, b){
-         function area(el){
-           var vb = (el.getAttribute('viewBox') || '').split(/\s+/).map(Number);
-           if (vb.length === 4 && vb.every(isFinite)) return vb[2] * vb[3];
-           var rect = el.getBoundingClientRect();
-           return (rect.width * rect.height) || 0;
-         }
-         return area(b) - area(a);
-       });
-       return list[0];
-     }
- 
-     function cloneMain(){
-       var base = mainSVG();
-       return base ? base.cloneNode(true) : null;
-     }
- 
-     function toPaperItems(svg){
--      if (!window.paper) {
--        alert('Paper.js not loaded');
--        return { project: null, items: [] };
--      }
-+      if (!window.paper) { alert('Paper.js not loaded'); return { project: null, items: [] }; }
-       var canvas = document.createElement('canvas');
-       paper.setup(canvas);
-       var xml = new XMLSerializer().serializeToString(svg);
-       if (!/xmlns=/.test(xml)) xml = xml.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
-       var imported = paper.project.importSVG(xml, { expandShapes: true, insert: true });
-       var items = imported ? imported.getItems({
-         match: function(it){ return it instanceof paper.PathItem; }
-       }) : [];
-       return { project: paper.project, items: items || [] };
-     }
- 
-     function fromPaperProject(project){
-       if (!project) return null;
-       var str = project.exportSVG({ asString: true, precision: 2 });
-       var doc = (new DOMParser()).parseFromString(str, 'image/svg+xml');
-       return document.importNode(doc.documentElement, true);
-     }
- 
-     function applyKerf(svg, mm, dir){
-       var PX_PER_MM = 96 / 25.4;
-       var amount = Math.max(0, Number(mm || 0) * PX_PER_MM);
-       if (!(amount > 0)) {
-         return svg;
-       }
-       var pack = toPaperItems(svg);
-       var pr = pack.project;
-       var items = pack.items;
-       items.forEach(function(path){
-         try {
-           var expanded = path.clone();
-           expanded.strokeColor = 'black';
-           expanded.strokeWidth = amount * 2;
-           expanded.fillColor = null;
-           expanded = expanded.expand(expanded.strokeWidth);
-           if (dir === 'out') {
-             var resOut = path.unite(expanded);
-             if (resOut) path.replaceWith(resOut);
-           } else {
-             var resIn = path.subtract(expanded);
-             if (resIn) path.replaceWith(resIn);
-           }
-           if (expanded && expanded.remove) expanded.remove();
-         } catch (err) {
-           console.warn('[kerf] adjust failed', err);
-         }
-       });
-       return fromPaperProject(pr);
-     }
- 
-     function downloadSVG(svg, name){
-       if (!svg) return;
-       var xmlHead = '<?xml version="1.0" encoding="UTF-8"?>\n';
-       var xml = new XMLSerializer().serializeToString(svg);
-       if (!/xmlns=/.test(xml)) xml = xml.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
-       var blob = new Blob([xmlHead + xml], { type: 'image/svg+xml' });
-       var url = URL.createObjectURL(blob);
-       var a = document.createElement('a');
-       a.href = url;
-       a.download = name || 'layercut-kerf.svg';
-       document.body.appendChild(a);
-       a.click();
-       setTimeout(function(){
-         URL.revokeObjectURL(url);
-         a.remove();
-       }, 0);
-     }
- 
-     function handle(action){
-       var base = cloneMain();
-       if (!base) { alert('No SVG found'); return; }
-       var mm = document.getElementById('kerf-mm').value;
-       var dir = document.getElementById('kerf-dir').value;
-       var out = applyKerf(base, mm, dir);
-       if (!out) { alert('Kerf failed'); return; }
-       if (action === 'preview') {
-         var w = window.open();
-         if (w && w.document) { w.document.write(out.outerHTML); }
-       } else if (action === 'export') {
-         downloadSVG(out, 'layercut-kerf.svg');
-       }
-     }
- 
-     document.getElementById('kerf-preview').addEventListener('click', function(){ handle('preview'); });
-     document.getElementById('kerf-export').addEventListener('click', function(){ handle('export'); });
-   })();
-   </script>
--=======
-+ 
-   <!-- Safari Kit • PATCH 5: Auto Layout pe baza cercului -->
-   <style>
-     #safari-layout{
-@@ -1702,6 +2047,7 @@
-   </script>
- 
-   <!-- UI Docking: mută panourile flotante în #tools-dock -->
-   <script>
-   (function(){
-     function findPanelByText(fragment){
-@@ -1719,12 +2065,14 @@
-       dock.appendChild(wrap);
-     }
-     function runDock(){
-       dock('Laser Ops', findPanelByText('preflight'));
-+      dock('Kerf Compensation', findPanelByText('kerf'));
-       dock('Boolean Ops', findPanelByText('unite'));
-       dock('Safari Kit', findPanelByText('add giraffe'));
-       dock('Safari Kit', findPanelByText('name preset'));
-       dock('Safari Kit', findPanelByText('apply safari layout'));
-     }
-     const obs = new MutationObserver(() => { runDock(); });
-     obs.observe(document.body, { childList:true, subtree:true });
-     window.addEventListener('load', runDock, { once:true });
-   })();
-   </script>
--
-->>>>>>> main
-+
- </body>
+  <!-- LASER OPS • PATCH 3: Text→Outlines + Expand Stroke -->
+  <style>
+    #outline-box{
+      position:fixed;right:16px;top:336px;z-index:99993;background:#fff;
+      border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.15);
+      padding:10px;min-width:260px
+    }
+    #outline-box .row{display:flex;gap:6px;align-items:center;margin:6px 0}
+  </style>
+  <div id="outline-box" data-export="false">
+    <div class="row">
+      <button id="btn-text-outlines">Convert Text → Outlines (clone)</button>
+    </div>
+    <div class="row">
+      <label style="width:110px">Expand Stroke (mm)</label>
+      <input id="expand-mm" type="number" min="0" step="0.01" value="0.00" style="width:84px">
+      <button id="btn-expand-export">Export with Expand</button>
+    </div>
+  </div>
+  <script>
+  (function(){
+    if (window.__LASER_OUTLINES__) return; window.__LASER_OUTLINES__=true;
+
+    // Asigură Paper.js full (dacă n-a fost deja încărcat în <head>)
+    if (typeof paper === 'undefined') {
+      var s=document.createElement('script');
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/paper.js/0.12.17/paper-full.min.js';
+      s.onload=init;
+      document.head.appendChild(s);
+    } else {
+      init();
+    }
+
+    function init(){
+      if (typeof paper === 'undefined'){ console.warn('[outline-box] paper.js missing'); return; }
+
+      function mainSVG(){
+        var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
+        a.sort(function(A,B){
+          function ar(x){
+            var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
+            if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];
+            var r=x.getBoundingClientRect();return r.width*r.height||0;
+          }
+          return ar(B)-ar(A);
+        });
+        return a[0];
+      }
+      function cloneMain(){ var m=mainSVG(); return m? m.cloneNode(true):null; }
+      function ensureNamespace(svg){
+        if(!svg) return svg;
+        if(!svg.getAttribute('xmlns')) svg.setAttribute('xmlns','http://www.w3.org/2000/svg');
+        if(!svg.getAttribute('xmlns:xlink')) svg.setAttribute('xmlns:xlink','http://www.w3.org/1999/xlink');
+        return svg;
+      }
+      function copyAttributes(src,dst){
+        if(!src||!dst) return dst;
+        var attrs=src.attributes;
+        for(var i=0;i<attrs.length;i++){ var at=attrs[i]; dst.setAttribute(at.name, at.value); }
+        return dst;
+      }
+      function toPaper(svg){
+        var c=document.createElement('canvas'); paper.setup(c);
+        var s=new XMLSerializer().serializeToString(svg);
+        if(!/xmlns=/.test(s)) s=s.replace('<svg','<svg xmlns="http://www.w3.org/2000/svg"');
+        paper.project.importSVG(s,{expandShapes:true, insert:true});
+        return paper.project;
+      }
+      function fromPaper(pr, original){
+        var str=pr.exportSVG({asString:true,precision:2});
+        var doc=(new DOMParser()).parseFromString(str,'image/svg+xml');
+        var node=document.importNode(doc.documentElement,true);
+        if(original) copyAttributes(original,node);
+        ensureNamespace(node);
+        return node;
+      }
+      function runPaper(svg, fn){
+        if(!svg) return null;
+        var pr=toPaper(svg);
+        try{ fn && fn(pr); return fromPaper(pr, svg); }
+        finally { try{ pr && pr.remove && pr.remove(); }catch(_){ } }
+      }
+
+      function textToOutlines(svg){
+        return runPaper(svg, function(pr){
+          pr.getItems({class:paper.PointText}).forEach(function(t){
+            try{
+              var fill = t.fillColor ? (t.fillColor.clone ? t.fillColor.clone() : t.fillColor) : null;
+              var group = t.createOutline();
+              t.remove();
+              if(group && group.children){
+                group.children.forEach(function(child){
+                  if(fill){ child.fillColor = fill.clone ? fill.clone() : fill; }
+                  child.strokeColor = null;
+                });
+              }
+            }catch(_){ }
+          });
+        });
+      }
+
+      function expandStroke(svg, mm){
+        var px=96/25.4, amount=Math.max(0,Number(mm||0)*px);
+        if (!amount) return svg;
+        return runPaper(svg, function(pr){
+          pr.getItems({class:paper.PathItem}).forEach(function(p){
+            try{
+              if (!(p.strokeWidth && p.strokeWidth>0)) return;
+              var ex=p.expand(p.strokeWidth + amount*2);
+              if (!ex) return;
+
+              var fillClone = null;
+              if (p.fillColor){
+                try{ fillClone = p.clone(); }catch(_){ fillClone = null; }
+                if (fillClone){
+                  fillClone.strokeWidth = 0;
+                  fillClone.strokeColor = null;
+                }
+              }
+
+              ex.strokeWidth=0; ex.strokeColor=null;
+              if (p.strokeColor) ex.fillColor = p.strokeColor.clone ? p.strokeColor.clone() : p.strokeColor;
+
+              var parent = p.parent, index = p.index;
+              if (fillClone && parent){ parent.insertChild(index, fillClone); index++; }
+              if (parent){ parent.insertChild(index, ex); p.remove(); }
+              else { p.replaceWith(ex); }
+            }catch(_){ }
+          });
+        });
+      }
+
+      function download(svg,name){
+        if(!svg) return;
+        ensureNamespace(svg);
+        var xmlHead='<?xml version="1.0" encoding="UTF-8"?>\n';
+        var s=new XMLSerializer().serializeToString(svg);
+        var blob=new Blob([xmlHead+s],{type:'image/svg+xml'});
+        var url=URL.createObjectURL(blob);
+        var a=document.createElement('a'); a.href=url; a.download=name||'layercut-export.svg';
+        document.body.appendChild(a); a.click();
+        setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 100);
+      }
+      function sanitizeName(base){ return (base||'export').replace(/[^a-z0-9_-]+/gi,'-'); }
+
+      function handleTextOutlines(){
+        var svg=cloneMain();
+        if(!svg){ alert('Main SVG not found'); return; }
+        var outlined=textToOutlines(svg);
+        if(!outlined){ alert('Failed to convert text to outlines.'); return; }
+        download(outlined, sanitizeName(document.title||'layercut')+'-outlines.svg');
+      }
+      function handleExpand(){
+        var mmEl=document.getElementById('expand-mm');
+        var mm=Number(mmEl && mmEl.value);
+        if(!Number.isFinite(mm) || mm<0) mm=0;
+        var svg=cloneMain();
+        if(!svg){ alert('Main SVG not found'); return; }
+        var outlined=textToOutlines(svg) || svg;
+        var expanded=expandStroke(outlined, mm);
+        if(!expanded){ alert('Failed to expand strokes.'); return; }
+        download(expanded, sanitizeName(document.title||'layercut')+'-expand-'+mm.toFixed(2)+'mm.svg');
+      }
+
+      var btnOutline=document.getElementById('btn-text-outlines');
+      var btnExpand=document.getElementById('btn-expand-export');
+      if(btnOutline) btnOutline.addEventListener('click', handleTextOutlines);
+      if(btnExpand) btnExpand.addEventListener('click', handleExpand);
+
+      // Dock în dreapta (dacă există #tools-dock)
+      try{
+        var box=document.getElementById('outline-box');
+        var dock=document.getElementById('tools-dock');
+        if (box && dock){
+          var wrap=document.createElement('div'); wrap.className='dock-section';
+          var h=document.createElement('div'); h.className='dock-title'; h.textContent='Text & Stroke';
+          wrap.appendChild(h); wrap.appendChild(box); dock.appendChild(wrap);
+        }
+      }catch(_){}
+    }
+  })();
+  </script>
 
 </body>
 </html>
