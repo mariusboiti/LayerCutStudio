@@ -4072,6 +4072,140 @@
     }, {passive:false});
   })();
   </script>
+  <!-- LASER OPS • PATCH 5: DXF Export (R14, polylines) -->
+  <style>
+    #dxf-box{
+      position:fixed;right:16px;top:488px;z-index:99993;background:#fff;
+      border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.15);
+      padding:10px;min-width:260px
+    }
+    #dxf-box .row{display:flex;gap:6px;align-items:center;margin:6px 0}
+  </style>
+  <div id="dxf-box" data-export="false">
+    <div class="row">
+      <label style="width:88px">Units</label>
+      <select id="dxf-unit">
+        <option value="mm">mm</option>
+        <option value="in">inch</option>
+      </select>
+    </div>
+    <div class="row">
+      <button id="dxf-export">Export DXF (R14)</button>
+    </div>
+  </div>
+  <script>
+  (function(){
+    if (window.__LASER_DXF__) return; window.__LASER_DXF__ = true;
+
+    function ensurePaper(cb){
+      if (typeof window.paper !== 'undefined') return cb();
+      var s=document.createElement('script');
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/paper.js/0.12.17/paper-full.min.js';
+      s.onload=cb; document.head.appendChild(s);
+    }
+
+    function mainSVG(){
+      var all = Array.prototype.slice.call(document.querySelectorAll('svg'));
+      if (!all.length) return null;
+      all.sort(function(a, b){
+        function area(x){
+          var vb = (x.getAttribute('viewBox') || '').split(/\s+/).map(Number);
+          if (vb.length === 4 && vb.every(isFinite)) return vb[2]*vb[3];
+          var r = x.getBoundingClientRect(); return r.width*r.height || 0;
+        }
+        return area(b) - area(a);
+      });
+      return all[0];
+    }
+    function cloneMain(){ var m = mainSVG(); return m ? m.cloneNode(true) : null; }
+
+    function toPaper(svg){
+      var canvas = document.createElement('canvas');
+      paper.setup(canvas);
+      var serialized = new XMLSerializer().serializeToString(svg);
+      if (!/xmlns=/.test(serialized)) serialized = serialized.replace('<svg','<svg xmlns="http://www.w3.org/2000/svg"');
+      paper.project.importSVG(serialized, { expandShapes: true, insert: true });
+      return paper.project;
+    }
+
+    // Flatten toate PathItem-urile la polilinii în unitățile alese; Y inversat pt. coordonate DXF
+    function flattenToPolylines(project, unit){
+      var px2u = (unit === 'in') ? (1/96) : (25.4/96); // 96 px ≈ 1 inch
+      var polys = [];
+      project.getItems({ class: paper.PathItem }).forEach(function(item){
+        try{
+          var path = (item.clone(false) || item).flatten(0.25);
+          var segs = path.segments, closed = path.closed;
+          var pts = segs.map(function(seg){
+            return { x: seg.point.x * px2u, y: (-seg.point.y) * px2u };
+          });
+          if (closed && pts.length){ pts.push({ x: pts[0].x, y: pts[0].y }); }
+          if (pts.length > 1) polys.push(pts);
+          path.remove();
+        }catch(_){}
+      });
+      return polys;
+    }
+
+    // DXF R14 simplu (POLYLINE + VERTEX), layer 0, INSUNITS: 1=in, 4=mm
+    function dxfFromPolylines(polys, unit){
+      var ucode = (unit === 'in') ? 1 : 4;
+      var lines = [
+        '0','SECTION','2','HEADER',
+        '9','$INSUNITS','70', String(ucode),
+        '0','ENDSEC',
+        '0','SECTION','2','ENTITIES'
+      ];
+      polys.forEach(function(pts){
+        lines.push('0','POLYLINE','8','0','66','1','70','8');
+        pts.forEach(function(pt){
+          lines.push('0','VERTEX','8','0','10', pt.x.toFixed(6), '20', pt.y.toFixed(6), '30','0.0');
+        });
+        lines.push('0','SEQEND');
+      });
+      lines.push('0','ENDSEC','0','EOF');
+      return lines.join('\n');
+    }
+
+    function downloadDXF(txt){
+      var blob = new Blob([txt], { type: 'application/dxf' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = 'layercut-export.dxf';
+      document.body.appendChild(a); a.click();
+      setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 0);
+    }
+
+    function init(){
+      var btn = document.getElementById('dxf-export');
+      if (btn){
+        btn.onclick = function(){
+          var base = cloneMain(); if (!base) { alert('No SVG'); return; }
+          var unit = document.getElementById('dxf-unit').value;
+          var project = toPaper(base);
+          var polys = project ? flattenToPolylines(project, unit) : [];
+          if (project) project.remove();
+          if (!polys.length) { alert('Nothing to export'); return; }
+          downloadDXF(dxfFromPolylines(polys, unit));
+        };
+      }
+
+      // Dock în dreapta
+      try{
+        var box=document.getElementById('dxf-box');
+        var dock=document.getElementById('tools-dock');
+        if (box && dock){
+          var wrap=document.createElement('div'); wrap.className='dock-section';
+          var h=document.createElement('div'); h.className='dock-title'; h.textContent='DXF Export';
+          wrap.appendChild(h); wrap.appendChild(box); dock.appendChild(wrap);
+        }
+      }catch(_){}
+    }
+
+    ensurePaper(init);
+  })();
+  </script>
+
   <!-- LASER OPS • PATCH 4: Hatch Engrave -->
   <style>
     #hatch-box{
@@ -4099,7 +4233,6 @@
   (function(){
     if (window.__LASER_HATCH__) return; window.__LASER_HATCH__=true;
 
-    // Asigură paper-full dacă nu există deja (se folosește și de PATCH 3/2)
     function ensurePaper(cb){
       if (typeof paper!=='undefined') return cb();
       var s=document.createElement('script');
@@ -4197,7 +4330,7 @@
       btnPrev && (btnPrev.onclick=function(){ run('preview'); });
       btnExp && (btnExp.onclick=function(){ run('export'); });
 
-      // Mută în dock dacă există
+      // Mută în dock
       try{
         var box=document.getElementById('hatch-box');
         var dock=document.getElementById('tools-dock');
@@ -4375,7 +4508,7 @@
       if(btnOutline) btnOutline.addEventListener('click', handleTextOutlines);
       if(btnExpand) btnExpand.addEventListener('click', handleExpand);
 
-      // Mută în dock dacă există
+      // Mută în dock
       try{
         var box=document.getElementById('outline-box');
         var dock=document.getElementById('tools-dock');
