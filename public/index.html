@@ -140,6 +140,7 @@
   <script src="https://unpkg.com/opentype.js@1.3.4/dist/opentype.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/paper.js/0.12.15/paper-core.min.js" integrity="sha512-B/1GJt8BK0WRxUfHb44wSIB86ugvWK+plV4CnIaWnflHTZCV7U866CrVnSYbycHtHTP5Lx9XzVD2TFAnVb4S6g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="https://cdn.jsdelivr.net/npm/clipper-lib@6.4.2/clipper.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/paper.js/0.12.17/paper-full.min.js" integrity="sha512-olzsIoU+aMaYFEpekX2SJTgY7udW1I8j/kG+c5tct0YPYn2lkRdBW32yvAGmNw92+AoxHjot3UQlbAHcEyluEg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
   <style>
     :root { --ui: #e5e7eb; --grid: #eef2f7; }
@@ -4070,485 +4071,207 @@
     }, {passive:false});
   })();
   </script>
-<!-- Safari Kit • PATCH 5: Auto Layout pe baza cercului -->
-<style>
-  #safari-layout{
-    position:fixed;right:16px;top:528px;z-index:99990;background:#fff;
-    border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.15);
-    padding:10px;min-width:220px
-  }
-  #safari-layout button{border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:6px 10px;cursor:pointer}
-</style>
-<div id="safari-layout" data-export="false">
-  <button id="sf-layout">✨ Apply Safari Layout</button>
-</div>
-<script>
-(function(){
-  if (window.__SAFARI_LAYOUT__) return; window.__SAFARI_LAYOUT__=true;
-
-  function mainSVG(){
-    var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
-    a.sort(function(A,B){
-      function ar(x){
-        var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
-        if(vb.length===4&&vb.every(isFinite)) return vb[2]*vb[3];
-        var r=x.getBoundingClientRect(); return r.width*r.height||0;
-      }
-      return ar(B)-ar(A);
-    });
-    return a[0];
-  }
-  function safariLayer(){
-    var sv=mainSVG(); if(!sv) return null;
-    var g=sv.querySelector('g.lcs-safari');
-    if(!g){ g=document.createElementNS('http://www.w3.org/2000/svg','g'); g.setAttribute('class','lcs-safari'); sv.appendChild(g); }
-    return g;
-  }
-  function vbCenter(){
-    var sv=mainSVG(); if(!sv) return {cx:0,cy:0};
-    var b=(sv.getAttribute('viewBox')||'').split(/\s+/).map(Number);
-    if(b.length===4&&b.every(isFinite)) return {cx:b[0]+b[2]/2, cy:b[1]+b[3]/2};
-    var r=sv.getBoundingClientRect(); return {cx:r.width/2, cy:r.height/2};
-  }
-  function setTransform(el, tx, ty, rot){
-    el && el.setAttribute('transform','translate('+tx+','+ty+') rotate('+(rot||0)+')');
-  }
-  function applyLayout(){
-    var sv=mainSVG(), g=safariLayer(), center=vbCenter(); if(!sv||!g) return;
-    var base=g.querySelector('#safari-base'); if(!base){ alert('Add Base first'); return; }
-    var r = parseFloat(base.getAttribute('r'))||200;
-    var cx = parseFloat(base.getAttribute('cx'))||center.cx;
-    var cy = parseFloat(base.getAttribute('cy'))||center.cy;
-
-    // giraffe în stânga-jos
-    var gf=g.querySelector('g.safari.giraffe'); if(gf) setTransform(gf, cx - r*0.65, cy + r*0.05, 0);
-    // frunze sus-stânga și jos-stânga
-    var leaves=[].slice.call(g.querySelectorAll('g.safari.leaf'));
-    if (leaves[0]) setTransform(leaves[0], cx - r*0.25, cy - r*0.80, -12);
-    if (leaves[1]) setTransform(leaves[1], cx - r*0.55, cy + r*0.35, 8);
-
-    try{ window.LCS && window.LCS.history && window.LCS.history.push('safari-layout'); }catch(_){}
-  }
-  var btn=document.getElementById('sf-layout'); if(btn) btn.onclick=applyLayout;
-})();
-</script>
-
-<!-- Safari Kit • PATCH 3: Giraffe sticker -->
-<style>
-  #safari-animals{
-    position:fixed;right:16px;top:368px;z-index:99990;background:#fff;
-    border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.15);
-    padding:10px;min-width:220px
-  }
-  #safari-animals button{
-    border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:6px 10px;cursor:pointer
-  }
-</style>
-<div id="safari-animals" data-export="false">
-  <button id="sf-giraffe">🦒 Add Giraffe</button>
-</div>
-<script>
-(function(){
-  if (window.__SAFARI_GIRAFFE__) return; window.__SAFARI_GIRAFFE__=true;
-  function mainSVG(){
-    var list=[].slice.call(document.querySelectorAll('svg')); if(!list.length) return null;
-    list.sort(function(a,b){
-      function area(el){
-        var vb=(el.getAttribute('viewBox')||'').split(/\s+/).map(Number);
-        if(vb.length===4&&vb.every(isFinite)) return vb[2]*vb[3];
-        var r=el.getBoundingClientRect(); return r.width*r.height||0;
-      }
-      return area(b)-area(a);
-    });
-    return list[0];
-  }
-  function safariLayer(){
-    var svg=mainSVG(); if(!svg) return null;
-    var g=svg.querySelector('g.lcs-safari');
-    if(!g){ g=document.createElementNS('http://www.w3.org/2000/svg','g'); g.setAttribute('class','lcs-safari'); svg.appendChild(g); }
-    return g;
-  }
-  function vbCenter(){
-    var svg=mainSVG(); if(!svg) return {cx:0,cy:0};
-    var b=(svg.getAttribute('viewBox')||'').split(/\s+/).map(Number);
-    if(b.length===4&&b.every(isFinite)) return {cx:b[0]+b[2]/2,cy:b[1]+b[3]/2};
-    var r=svg.getBoundingClientRect(); return {cx:r.width/2,cy:r.height/2};
-  }
-  function addGiraffe(){
-    var target=safariLayer(), c=vbCenter(); if(!target) return;
-    var grp=document.createElementNS('http://www.w3.org/2000/svg','g');
-    grp.setAttribute('class','safari giraffe selected');
-    grp.setAttribute('data-selected','1');
-    grp.setAttribute('transform','translate('+(c.cx-180)+','+(c.cy+40)+')');
-    grp.setAttribute('data-export','true');
-    grp.setAttribute('tabindex','0');
-
-    var neck=document.createElementNS('http://www.w3.org/2000/svg','rect');
-    neck.setAttribute('x','50'); neck.setAttribute('y','70');
-    neck.setAttribute('rx','14'); neck.setAttribute('ry','14');
-    neck.setAttribute('width','38'); neck.setAttribute('height','110');
-    neck.setAttribute('fill','#ffd79e'); neck.setAttribute('stroke','#7a4f2a'); neck.setAttribute('stroke-width','3');
-    grp.appendChild(neck);
-
-    var head=document.createElementNS('http://www.w3.org/2000/svg','path');
-    head.setAttribute('d','M40,40 C40,15 120,15 120,40 C125,80 115,110 80,120 C45,110 35,80 40,40 Z');
-    head.setAttribute('fill','#ffe6b8'); head.setAttribute('stroke','#7a4f2a'); head.setAttribute('stroke-width','3');
-    grp.appendChild(head);
-
-    var snout=document.createElementNS('http://www.w3.org/2000/svg','ellipse');
-    snout.setAttribute('cx','80'); snout.setAttribute('cy','100'); snout.setAttribute('rx','34'); snout.setAttribute('ry','24');
-    snout.setAttribute('fill','#f3b17f'); grp.appendChild(snout);
-
-    var eye1=document.createElementNS('http://www.w3.org/2000/svg','circle');
-    eye1.setAttribute('cx','65'); eye1.setAttribute('cy','78'); eye1.setAttribute('r','4'); eye1.setAttribute('fill','#2b2b2b'); grp.appendChild(eye1);
-
-    var eye2=document.createElementNS('http://www.w3.org/2000/svg','circle');
-    eye2.setAttribute('cx','95'); eye2.setAttribute('cy','78'); eye2.setAttribute('r','4'); eye2.setAttribute('fill','#2b2b2b'); grp.appendChild(eye2);
-
-    var horn1=document.createElementNS('http://www.w3.org/2000/svg','circle');
-    horn1.setAttribute('cx','60'); horn1.setAttribute('cy','25'); horn1.setAttribute('r','7'); horn1.setAttribute('fill','#d59b6a'); grp.appendChild(horn1);
-
-    var horn2=document.createElementNS('http://www.w3.org/2000/svg','circle');
-    horn2.setAttribute('cx','100'); horn2.setAttribute('cy','25'); horn2.setAttribute('r','7'); horn2.setAttribute('fill','#d59b6a'); grp.appendChild(horn2);
-
-    function spot(x,y,r){
-      var c=document.createElementNS('http://www.w3.org/2000/svg','circle');
-      c.setAttribute('cx',x); c.setAttribute('cy',y); c.setAttribute('r',r); c.setAttribute('fill','#e2a063'); grp.appendChild(c);
-    }
-    spot(64,150,8); spot(84,160,7); spot(70,180,6);
-
-    target.appendChild(grp);
-    try{ window.LCS && window.LCS.history && window.LCS.history.push('giraffe-add'); }catch(_){}
-  }
-  var btn=document.getElementById('sf-giraffe'); if(btn) btn.onclick=addGiraffe;
-})();
-</script>
-
-<!-- Safari Kit • PATCH 4: Name Preset (BLOCK + Script) -->
-<style>
-  #safari-names{
-    position:fixed;right:16px;top:468px;z-index:99990;background:#fff;
-    border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.15);
-    padding:10px;min-width:220px
-  }
-  #safari-names button{border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:6px 10px;cursor:pointer}
-</style>
-<div id="safari-names" data-export="false">
-  <button id="sf-preset-names">🖊️ Name Preset…</button>
-</div>
-<script>
-(function(){
-  if (window.__SAFARI_NAMES__) return; window.__SAFARI_NAMES__=true;
-  function setInput(selector, val){
-    var el=document.querySelector(selector); if(!el) return false;
-    el.value=val; el.dispatchEvent(new Event('input',{bubbles:true})); el.dispatchEvent(new Event('change',{bubbles:true}));
-    return true;
-  }
-  function chooseFont(name){
-    var sel=document.querySelector('select'); if(!sel) return;
-    var opt=[].slice.call(sel.options).find(function(o){return (o.textContent||'').toLowerCase().includes(name)});
-    if (opt){ sel.value=opt.value; sel.dispatchEvent(new Event('change',{bubbles:true})); }
-  }
-  function preset(){
-    var first=prompt('First name (UPPERCASE)','HUDSON')||'';
-    var middle=prompt('Middle name (Script)','James')||'';
-    setInput('input[placeholder^="Text"]', first.toUpperCase());
-    var inputs=document.querySelectorAll('input[type="text"]');
-    if(inputs[1]){
-      inputs[1].value=middle;
-      inputs[1].dispatchEvent(new Event('input',{bubbles:true}));
-      inputs[1].dispatchEvent(new Event('change',{bubbles:true}));
-    }
-    chooseFont('demo'); // ajustează subșirul după fonturile tale
-    try{ window.LCS && window.LCS.history && window.LCS.history.push('names-preset'); }catch(_){}
-  }
-  var b=document.getElementById('sf-preset-names'); if(b) b.onclick=preset;
-})();
-</script>
-
-<!-- LASER OPS • PATCH 1: Color map + Preflight -->
-<style>
-  #laser-ops{position:fixed;right:16px;top:86px;z-index:99993;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.15);padding:10px;min-width:260px}
-  #laser-ops h4{margin:0 0 6px;font:700 13px system-ui;color:#111827}
-  #laser-ops .row{display:flex;gap:6px;align-items:center;margin:6px 0}
-  #laser-ops input[type="color"]{width:32px;height:28px;border:0;background:transparent;padding:0}
-  #laser-ops button{border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:6px 10px;cursor:pointer}
-  #laser-preflight{display:none;position:fixed;inset:0;z-index:99994;background:rgba(0,0,0,.35);align-items:flex-start;justify-content:center;padding-top:8vh}
-  #laser-preflight .box{width:min(820px,92vw);background:#fff;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.35);padding:14px}
-  #laser-preflight h3{margin:0 0 8px;font:700 16px system-ui}
-  #laser-preflight ul{margin:0;padding-left:18px;max-height:60vh;overflow:auto}
-  #laser-preflight li{margin:6px 0}
-</style>
-<div id="laser-ops" data-export="false">
-  <h4>Laser Ops</h4>
-  <div class="row"><label style="width:88px">Cut</label><input id="map-cut"   type="color" value="#ff0000"><small>stroke, no fill</small></div>
-  <div class="row"><label style="width:88px">Score</label><input id="map-score" type="color" value="#0000ff"><small>stroke, no fill</small></div>
-  <div class="row"><label style="width:88px">Engrave</label><input id="map-engr" type="color" value="#000000"><small>fill</small></div>
-  <div class="row" style="gap:8px;flex-wrap:wrap">
-    <button id="btn-preflight">Preflight</button>
-    <button id="btn-preflight-export">Preflight & Export SVG</button>
-  </div>
-</div>
-<div id="laser-preflight" data-export="false">
-  <div class="box">
-    <h3>Preflight report</h3>
-    <ul id="pf-list"></ul>
-    <div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end">
-      <button id="pf-fix">Fix common issues</button>
-      <button id="pf-close">Close</button>
-    </div>
-  </div>
-</div>
-<script>
-(function(){
-  if (window.__LASER_OPS__) return; window.__LASER_OPS__=true;
-  if (!window.paper){ var s=document.createElement('script'); s.src='https://unpkg.com/paper@0.12.17/dist/paper-full.min.js'; document.head.appendChild(s); }
-  var KEY='LCS:opmap';
-  function mainSVG(){
-    var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
-    a.sort(function(A,B){
-      function ar(x){
-        var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
-        if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3]; var r=x.getBoundingClientRect(); return r.width*r.height||0;
-      }
-      return ar(B)-ar(A);
-    });
-    return a[0];
-  }
-  function loadMap(){ try{ var j=localStorage.getItem(KEY); if(j) return JSON.parse(j); }catch(_){ } return {cut:'#ff0000',score:'#0000ff',engrave:'#000000'}; }
-  function saveMap(map){ try{ localStorage.setItem(KEY, JSON.stringify(map)); }catch(_){ } }
-  function getMapFromUI(){ return {cut:document.getElementById('map-cut').value,score:document.getElementById('map-score').value,engrave:document.getElementById('map-engr').value}; }
-  function setUIFromMap(m){ document.getElementById('map-cut').value=m.cut; document.getElementById('map-score').value=m.score; document.getElementById('map-engr').value=m.engrave; }
-  setUIFromMap(loadMap()); ['map-cut','map-score','map-engr'].forEach(function(id){ var el=document.getElementById(id); if(el) el.oninput=function(){ saveMap(getMapFromUI()); }; });
-
-  function collectIssues(svg,map){
-    var issues=[], cut=map.cut.toLowerCase(), score=map.score.toLowerCase(), engr=map.engrave.toLowerCase();
-    var nodes=[].slice.call(svg.querySelectorAll('*')).filter(function(n){ return n.tagName!=='defs' && !n.closest('[data-export="false"]'); });
-    nodes.forEach(function(n){
-      var fill=(n.getAttribute('fill')||'').toLowerCase();
-      var stroke=(n.getAttribute('stroke')||'').toLowerCase();
-      var sw=n.getAttribute('stroke-width');
-      if (stroke===cut || stroke===score){
-        if (fill && fill!=='none') issues.push('Element cu ' + (stroke===cut?'Cut':'Score') + ' are fill ≠ none');
-        if (!sw) issues.push('Element ' + (stroke===cut?'Cut':'Score') + ' fără stroke-width (se recomandă 0.1mm)');
-      }
-      if (fill===engr && stroke && stroke!=='none') issues.push('Engrave are stroke setat (de obicei doar fill)');
-    });
-    if (!nodes.length) issues.push('Nu s-au găsit elemente în SVG.');
-    return issues;
-  }
-  function fixCommon(svg,map){
-    var cut=map.cut.toLowerCase(), score=map.score.toLowerCase(), engr=map.engrave.toLowerCase();
-    var pxPerMM=96/25.4;
-    [].slice.call(svg.querySelectorAll('*')).forEach(function(n){
-      var fill=(n.getAttribute('fill')||'').toLowerCase();
-      var stroke=(n.getAttribute('stroke')||'').toLowerCase();
-      if (stroke===cut || stroke===score){
-        n.setAttribute('fill','none');
-        n.setAttribute('stroke-width',(0.1*pxPerMM).toFixed(3)+'mm');
-        n.setAttribute('stroke-linejoin','round'); n.setAttribute('stroke-linecap','round');
-      }
-      if (fill===engr && stroke && stroke!=='none') n.setAttribute('stroke','none');
-    });
-  }
-  function cloneMain(){ var m=mainSVG(); if(!m) return null; return m.cloneNode(true); }
-  function showPreflight(list){
-    var wrap=document.getElementById('laser-preflight'), ul=document.getElementById('pf-list');
-    ul.innerHTML=''; if(!list.length){ ul.innerHTML='<li>Nicio problemă găsită ✔</li>'; }
-    list.forEach(function(s){ var li=document.createElement('li'); li.textContent=s; ul.appendChild(li); });
-    wrap.style.display='flex';
-  }
-  function exportSVGWithMap(){
-    var map=getMapFromUI(), clone=cloneMain(); if(!clone){ alert('No SVG to export'); return; }
-    var issues=collectIssues(clone,map);
-    (function normalizeWH(svg){
-      var vb=(svg.getAttribute('viewBox')||'').trim().split(/\s+/).map(Number), w=0,h=0;
-      if(vb.length===4&&vb.every(isFinite)){ w=vb[2]; h=vb[3]; }
-      if (w>0&&h>0){ svg.setAttribute('width',(w*(25.4/96)).toFixed(3)+'mm'); svg.setAttribute('height',(h*(25.4/96)).toFixed(3)+'mm'); }
-    })(clone);
-    fixCommon(clone,map);
-    var xmlHead='<?xml version="1.0" encoding="UTF-8"?>\n';
-    var s=new XMLSerializer().serializeToString(clone); if(!/xmlns=/.test(s)) s=s.replace('<svg','<svg xmlns="http://www.w3.org/2000/svg"');
-    var blob=new Blob([xmlHead+s],{type:'image/svg+xml'}), url=URL.createObjectURL(blob);
-    var a=document.createElement('a'); a.href=url; a.download='layercut-export.svg'; document.body.appendChild(a); a.click();
-    setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); },0);
-    showPreflight(issues);
-  }
-  document.getElementById('btn-preflight').onclick=function(){ var map=getMapFromUI(), clone=cloneMain(); if(!clone){ alert('No SVG'); return; } showPreflight(collectIssues(clone,map)); };
-  document.getElementById('btn-preflight-export').onclick=exportSVGWithMap;
-  document.getElementById('pf-close').onclick=function(){ document.getElementById('laser-preflight').style.display='none'; };
-  document.getElementById('pf-fix').onclick=function(){ var map=getMapFromUI(), clone=cloneMain(); if(!clone){ alert('No SVG'); return; } fixCommon(clone,map); showPreflight(collectIssues(clone,map)); };
-})();
-</script>
-
-<!-- Helpers pentru Paper.js (non-invaziv, fără dublu-setup) — păstrate din main -->
-<script>
-(function(){
-  if (window.__PF_HELPERS__) return; window.__PF_HELPERS__=true;
-
-  function mainSVG(){
-    var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
-    a.sort(function(A,B){
-      function ar(x){
-        var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
-        if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];
-        var r=x.getBoundingClientRect(); return r.width*r.height||0;
-      }
-      return ar(B)-ar(A);
-    });
-    return a[0];
-  }
-  function getSelectionDom(){
-    var root=mainSVG()||document;
-    var els=[].slice.call(root.querySelectorAll('[data-selected="1"],[aria-selected="true"],.selected'));
-    try{
-      if (!els.length && typeof window.getSnapshot==='function'){
-        var s=window.getSnapshot()||{}, ids=Array.isArray(s.selection)?s.selection:(s.selection?[s.selection]:[]);
-        ids.forEach(function(id){
-          var sel=document.querySelector('[data-lcs-id="'+id+'"],[data-id="'+id+'"],#'+(window.CSS&&CSS.escape?CSS.escape(id):id));
-          if (sel) els.push(sel);
-        });
-      }
-    }catch(_){}
-    els = els.filter(function(n){ return !!n.ownerSVGElement || n.tagName==='svg'; });
-    return els;
-  }
-  function asSVGString(nodes){
-    var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
-    svg.setAttribute('xmlns','http://www.w3.org/2000/svg');
-    nodes.forEach(function(n){ svg.appendChild(n.cloneNode(true)); });
-    return new XMLSerializer().serializeToString(svg);
-  }
-  function importToPaper(nodes){
-    if (!window.paper) return [];
-    var pfCanvas=document.getElementById('pf-canvas');
-    try{ if(!paper.project||!paper.project.view) paper.setup(pfCanvas); }catch(_){}
-    paper.project.clear();
-    var svgString=asSVGString(nodes);
-    var imported=paper.project.importSVG(svgString,{expandShapes:true,insert:true});
-    var items=[];
-    imported.children && imported.children.forEach(function(ch){ ch.flatten && ch.flatten(0.1); });
-    imported.descendants && imported.descendants.forEach(function(it){
-      if(it.className==='Path'||it.className==='CompoundPath'){ items.push(it); }
-    });
-    return items;
-  }
-  function exportPaperToElement(item, styleFrom){
-    if(!window.paper||!item) return null;
-    var str=item.exportSVG({asString:true,precision:2});
-    var doc=new DOMParser().parseFromString(str,'image/svg+xml');
-    var el=doc.documentElement;
-    if(styleFrom){
-      ['fill','stroke','stroke-width','stroke-linejoin','stroke-linecap'].forEach(function(k){
-        var v=styleFrom.getAttribute(k); if(v!=null) el.setAttribute(k,v);
-      });
-    }
-    return document.importNode(el,true);
-  }
-  function pushHistory(tag){ try{ window.LCS && window.LCS.history && window.LCS.history.push(tag||'pathfinder'); }catch(_){ } }
-
-  window.__PF__={ mainSVG, getSelectionDom, asSVGString, importToPaper, exportPaperToElement, pushHistory };
-})();
-</script>
-
-  <script>
-  // Safari Kit • Unifier
-  (function () {
-    const byId = (id) => document.getElementById(id);
-    const ensure = (id) => byId(id) || console.warn("[SafariKit] missing:", id);
-
-    const stage = ensure('safari-stage');
-    if (!stage) return;
-
-    const L = {
-      leavesLayer: ensure('safari-leaves-layer'),
-      animalsLayer: ensure('safari-animals-layer'),
-      textLayer: ensure('safari-text-layer'),
-    };
-
-    // Caută nodurile existente rezultate din patch-urile anterioare:
-    const candidates = {
-      leaves: ['safari-leaves'],
-      animals: ['safari-animals','safari-giraffe'],
-      text: ['safari-name']
-    };
-
-    // Mută, dacă există:
-    const moveIfFound = (ids, target, fallbackPlaceholderId, defaultClassList=[]) => {
-      const el = ids.map(byId).find(Boolean);
-      const placeholder = byId(fallbackPlaceholderId);
-      if (el && target) {
-        // curăță placeholder-ul dacă migrează conținut real
-        if (placeholder) placeholder.remove();
-        el.classList.add('safari-el','pos', ...defaultClassList);
-        target.appendChild(el);
-      } else {
-        // lasă placeholder, ca să vezi poziționarea
-      }
-    };
-
-    moveIfFound(candidates.leaves,  L.leavesLayer,  'safari-leaves-placeholder',  ['pos-top-left']);
-    moveIfFound(candidates.animals, L.animalsLayer, 'safari-animals-placeholder', ['pos-bottom-right']);
-    moveIfFound(candidates.text,    L.textLayer,    'safari-name-placeholder',    ['pos-top-center']);
-
-    // Opțional: auto-fit înălțimea stage-ului la un raport dorit (ex: 16:9) când containerul e larg
-    const desiredRatio = 9/16; // înălțime / lățime
-    const fitStage = () => {
-      const w = stage.clientWidth;
-      if (w > 640) {
-        stage.style.minHeight = Math.max(420, Math.round(w * desiredRatio)) + 'px';
-      } else {
-        stage.style.minHeight = '360px';
-      }
-    };
-    fitStage();
-    window.addEventListener('resize', fitStage, { passive: true });
-  })();
-  </script>
-  <script>
-  // === UI Docking: mută panourile flotante în #tools-dock pe baza textului ===
-  (function(){
-    function findPanelByText(fragment){
-      const all = Array.from(document.querySelectorAll('body *'))
-        .filter(n => n.childElementCount === 0 && n.textContent && n.textContent.trim().length);
-      const leaf = all.find(n => n.textContent.toLowerCase().includes(fragment));
-      if(!leaf) return null;
-      // urcă până la un container rezonabil
-      return leaf.closest('.card') || leaf.closest('[style*="border"]') || leaf.closest('div');
-    }
-    function dock(title, panel){
-      if(!panel) return;
-      const dock = document.getElementById('tools-dock');
-      if(!dock) return;
-      // evită dublarea: dacă e deja în dock, ieși
-      if(dock.contains(panel)) return;
-      const wrap = document.createElement('div');
-      wrap.className = 'dock-section';
-      if(title){
-        const h = document.createElement('div');
-        h.className = 'dock-title';
-        h.textContent = title;
-        wrap.appendChild(h);
-      }
-      wrap.appendChild(panel);
-      dock.appendChild(wrap);
-    }
-    function runDock(){
-      // Laser Ops
-      dock('Laser Ops', findPanelByText('preflight'));
-      // Boolean Ops (Unite/Intersect/...)
-      dock('Boolean Ops', findPanelByText('unite'));
-      // Safari Kit
-      dock('Safari Kit', findPanelByText('add giraffe'));
-      dock('Safari Kit', findPanelByText('name preset'));
-      dock('Safari Kit', findPanelByText('apply safari layout'));
-    }
-    // rulează după ce React a montat UI-ul
-    const obs = new MutationObserver(() => { runDock(); });
-    obs.observe(document.body, { childList:true, subtree:true });
-    window.addEventListener('load', runDock, { once:true });
-  })();
-  </script>
+--- a/public/index.html
++++ b/public/index.html
+@@ -1,7 +1,7 @@
+ <!-- ... alte secțiuni existente ... -->
+@@ -999,7 +999,642 @@
+-<<<<<<< codex/add-kerf-compensation-feature
+-  <!-- LASER OPS • PATCH 2: Kerf Compensation -->
+-  <style>
+-    #kerf-box { position: fixed; right: 16px; top: 260px; z-index: 99993; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 8px 28px rgba(0, 0, 0, .15); padding: 10px; min-width: 260px; }
+-    #kerf-box .row { display: flex; gap: 6px; align-items: center; margin: 6px 0; }
+-  </style>
+-  <div id="kerf-box">
+-    <div class="row">
+-      <label style="width: 88px">Kerf (mm)</label>
+-      <input id="kerf-mm" type="number" min="0" step="0.01" value="0.15" style="width: 84px">
+-      <select id="kerf-dir">
+-        <option value="out">Outward</option>
+-        <option value="in">Inward</option>
+-      </select>
+-    </div>
+-    <div class="row" style="gap: 8px; flex-wrap: wrap">
+-      <button id="kerf-preview">Preview kerf</button>
+-      <button id="kerf-export">Export SVG w/ kerf</button>
+-    </div>
+-  </div>
+-  <script>
+-  (function(){
+-    if (window.__LASER_KERF__) return;
+-    window.__LASER_KERF__ = true;
++  <!-- LASER OPS • PATCH 2: Kerf Compensation -->
++  <style>
++    #kerf-box { position: fixed; right: 16px; top: 260px; z-index: 99993; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 8px 28px rgba(0, 0, 0, .15); padding: 10px; min-width: 260px; }
++    #kerf-box .row { display: flex; gap: 6px; align-items: center; margin: 6px 0; }
++  </style>
++  <div id="kerf-box" data-export="false">
++    <div class="row">
++      <label style="width: 88px">Kerf (mm)</label>
++      <input id="kerf-mm" type="number" min="0" step="0.01" value="0.15" style="width: 84px">
++      <select id="kerf-dir">
++        <option value="out">Outward</option>
++        <option value="in">Inward</option>
++      </select>
++    </div>
++    <div class="row" style="gap: 8px; flex-wrap: wrap">
++      <button id="kerf-preview">Preview kerf</button>
++      <button id="kerf-export">Export SVG w/ kerf</button>
++    </div>
++  </div>
++  <script>
++  (function(){
++    if (window.__LASER_KERF__) return; window.__LASER_KERF__ = true;
++    // asigură Paper.js dacă nu e deja injectat de Laser Ops
++    if (!window.paper) {
++      var s=document.createElement('script'); s.src='https://unpkg.com/paper@0.12.17/dist/paper-full.min.js';
++      document.head.appendChild(s);
++    }
+ 
+     function mainSVG(){
+       var list = Array.prototype.slice.call(document.querySelectorAll('svg'));
+       if (!list.length) return null;
+       list.sort(function(a, b){
+         function area(el){
+           var vb = (el.getAttribute('viewBox') || '').split(/\s+/).map(Number);
+           if (vb.length === 4 && vb.every(isFinite)) return vb[2] * vb[3];
+           var rect = el.getBoundingClientRect();
+           return (rect.width * rect.height) || 0;
+         }
+         return area(b) - area(a);
+       });
+       return list[0];
+     }
+ 
+     function cloneMain(){
+       var base = mainSVG();
+       return base ? base.cloneNode(true) : null;
+     }
+ 
+     function toPaperItems(svg){
+-      if (!window.paper) {
+-        alert('Paper.js not loaded');
+-        return { project: null, items: [] };
+-      }
++      if (!window.paper) { alert('Paper.js not loaded'); return { project: null, items: [] }; }
+       var canvas = document.createElement('canvas');
+       paper.setup(canvas);
+       var xml = new XMLSerializer().serializeToString(svg);
+       if (!/xmlns=/.test(xml)) xml = xml.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+       var imported = paper.project.importSVG(xml, { expandShapes: true, insert: true });
+       var items = imported ? imported.getItems({
+         match: function(it){ return it instanceof paper.PathItem; }
+       }) : [];
+       return { project: paper.project, items: items || [] };
+     }
+ 
+     function fromPaperProject(project){
+       if (!project) return null;
+       var str = project.exportSVG({ asString: true, precision: 2 });
+       var doc = (new DOMParser()).parseFromString(str, 'image/svg+xml');
+       return document.importNode(doc.documentElement, true);
+     }
+ 
+     function applyKerf(svg, mm, dir){
+       var PX_PER_MM = 96 / 25.4;
+       var amount = Math.max(0, Number(mm || 0) * PX_PER_MM);
+       if (!(amount > 0)) {
+         return svg;
+       }
+       var pack = toPaperItems(svg);
+       var pr = pack.project;
+       var items = pack.items;
+       items.forEach(function(path){
+         try {
+           var expanded = path.clone();
+           expanded.strokeColor = 'black';
+           expanded.strokeWidth = amount * 2;
+           expanded.fillColor = null;
+           expanded = expanded.expand(expanded.strokeWidth);
+           if (dir === 'out') {
+             var resOut = path.unite(expanded);
+             if (resOut) path.replaceWith(resOut);
+           } else {
+             var resIn = path.subtract(expanded);
+             if (resIn) path.replaceWith(resIn);
+           }
+           if (expanded && expanded.remove) expanded.remove();
+         } catch (err) {
+           console.warn('[kerf] adjust failed', err);
+         }
+       });
+       return fromPaperProject(pr);
+     }
+ 
+     function downloadSVG(svg, name){
+       if (!svg) return;
+       var xmlHead = '<?xml version="1.0" encoding="UTF-8"?>\n';
+       var xml = new XMLSerializer().serializeToString(svg);
+       if (!/xmlns=/.test(xml)) xml = xml.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+       var blob = new Blob([xmlHead + xml], { type: 'image/svg+xml' });
+       var url = URL.createObjectURL(blob);
+       var a = document.createElement('a');
+       a.href = url;
+       a.download = name || 'layercut-kerf.svg';
+       document.body.appendChild(a);
+       a.click();
+       setTimeout(function(){
+         URL.revokeObjectURL(url);
+         a.remove();
+       }, 0);
+     }
+ 
+     function handle(action){
+       var base = cloneMain();
+       if (!base) { alert('No SVG found'); return; }
+       var mm = document.getElementById('kerf-mm').value;
+       var dir = document.getElementById('kerf-dir').value;
+       var out = applyKerf(base, mm, dir);
+       if (!out) { alert('Kerf failed'); return; }
+       if (action === 'preview') {
+         var w = window.open();
+         if (w && w.document) { w.document.write(out.outerHTML); }
+       } else if (action === 'export') {
+         downloadSVG(out, 'layercut-kerf.svg');
+       }
+     }
+ 
+     document.getElementById('kerf-preview').addEventListener('click', function(){ handle('preview'); });
+     document.getElementById('kerf-export').addEventListener('click', function(){ handle('export'); });
+   })();
+   </script>
+-=======
++ 
+   <!-- Safari Kit • PATCH 5: Auto Layout pe baza cercului -->
+   <style>
+     #safari-layout{
+@@ -1702,6 +2047,7 @@
+   </script>
+ 
+   <!-- UI Docking: mută panourile flotante în #tools-dock -->
+   <script>
+   (function(){
+     function findPanelByText(fragment){
+@@ -1719,12 +2065,14 @@
+       dock.appendChild(wrap);
+     }
+     function runDock(){
+       dock('Laser Ops', findPanelByText('preflight'));
++      dock('Kerf Compensation', findPanelByText('kerf'));
+       dock('Boolean Ops', findPanelByText('unite'));
+       dock('Safari Kit', findPanelByText('add giraffe'));
+       dock('Safari Kit', findPanelByText('name preset'));
+       dock('Safari Kit', findPanelByText('apply safari layout'));
+     }
+     const obs = new MutationObserver(() => { runDock(); });
+     obs.observe(document.body, { childList:true, subtree:true });
+     window.addEventListener('load', runDock, { once:true });
+   })();
+   </script>
+-
+->>>>>>> main
++
+ </body>
 
 </body>
 </html>
