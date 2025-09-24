@@ -3093,5 +3093,572 @@
     }, {passive:false});
   })();
   </script>
+  <script>
+  (function(){
+    if (window.__LCS_PATHFINDER__) return;
+    window.__LCS_PATHFINDER__ = true;
+
+    const paperScope = window.paper;
+    const canvas = document.getElementById('pf-canvas');
+    const panel = document.getElementById('lcs-pathfinder');
+    if (!paperScope || !canvas || !panel) {
+      console.warn('[Pathfinder] Paper.js sau canvas-ul auxiliar lipsesc.');
+      return;
+    }
+
+    try { paperScope.setup(canvas); } catch (err) {
+      console.error('[Pathfinder] Nu pot inițializa Paper.js:', err);
+      return;
+    }
+
+    const hintEl = panel.querySelector('small');
+    const defaultHint = hintEl ? hintEl.textContent : '';
+    let hintTimer = null;
+
+    function notify(msg, ttl){
+      if (!hintEl) return;
+      if (hintTimer) clearTimeout(hintTimer);
+      hintEl.textContent = msg || defaultHint;
+      if (msg && ttl !== 0){
+        hintTimer = setTimeout(() => { hintEl.textContent = defaultHint; }, ttl || 2400);
+      }
+    }
+
+    const shapeTypes = new Set(['path','compound','shape','group','g','rect','rectangle','circle','ellipse','polygon','polyline']);
+    const childKeys = ['children','items','shapes','objects','elements','nodes','paths','segments','components'];
+
+    function cloneSnapshot(obj){
+      try {
+        if (typeof structuredClone === 'function') return structuredClone(obj);
+      } catch(_){}
+      return JSON.parse(JSON.stringify(obj));
+    }
+
+    function normalizeType(type){
+      return type ? String(type).toLowerCase() : '';
+    }
+
+    function isShapeLike(node, type){
+      if (!node || typeof node !== 'object') return false;
+      if (type && shapeTypes.has(type)) return true;
+      if (typeof node.d === 'string' || typeof node.path === 'string' || typeof node.pathData === 'string') return true;
+      if (typeof node.points === 'string' || Array.isArray(node.points)) return true;
+      if ('width' in node && 'height' in node) return true;
+      if ('r' in node || 'radius' in node || 'rx' in node || 'ry' in node) return true;
+      if (Array.isArray(node.children) || Array.isArray(node.items)) return true;
+      return false;
+    }
+
+    function getShapeId(node){
+      if (!node || typeof node !== 'object') return null;
+      const id = node.id ?? node.uid ?? node.uuid ?? node.key ?? node.name ?? node.handle ?? null;
+      return id != null ? String(id) : null;
+    }
+
+    function gatherShapeMap(root){
+      const map = new Map();
+      const visited = new WeakSet();
+
+      function walk(value, owner, key, depth){
+        if (!value || depth > 8) return;
+        if (typeof value !== 'object') return;
+        if (visited.has(value)) return;
+        visited.add(value);
+
+        if (Array.isArray(value)) {
+          for (let i = 0; i < value.length; i++) {
+            walk(value[i], value, i, depth + 1);
+          }
+          return;
+        }
+
+        const type = normalizeType(value.type || value.kind || value.shape || value.nodeName || value.elementType);
+        const id = getShapeId(value);
+        if (owner && id && isShapeLike(value, type)) {
+          const order = (typeof value.order === 'number') ? value.order
+            : (typeof value.z === 'number') ? value.z
+            : (typeof value.index === 'number') ? value.index
+            : (Array.isArray(owner) && typeof key === 'number') ? key
+            : 0;
+          map.set(id, { node: value, owner, key, type, order, isArray: Array.isArray(owner) });
+        }
+
+        for (const childKey of childKeys) {
+          const child = value[childKey];
+          if (child) walk(child, value, childKey, depth + 1);
+        }
+        for (const ownKey in value) {
+          if (!Object.prototype.hasOwnProperty.call(value, ownKey)) continue;
+          if (childKeys.includes(ownKey)) continue;
+          const child = value[ownKey];
+          if (child && typeof child === 'object') {
+            walk(child, value, ownKey, depth + 1);
+          }
+        }
+      }
+
+      walk(root, null, null, 0);
+      return map;
+    }
+
+    function toIdArray(value){
+      if (!value) return [];
+      if (Array.isArray(value)) {
+        return value.map((item) => {
+          if (typeof item === 'string' || typeof item === 'number') return String(item);
+          if (item && typeof item === 'object') {
+            const inner = item.id ?? item.uid ?? item.uuid ?? item.key ?? item.name ?? null;
+            return inner != null ? String(inner) : null;
+          }
+          return null;
+        }).filter(Boolean);
+      }
+      if (typeof value === 'string' || typeof value === 'number') return [String(value)];
+      if (typeof value === 'object') {
+        const collect = [];
+        if (Array.isArray(value.ids)) collect.push(...toIdArray(value.ids));
+        if (Array.isArray(value.items)) collect.push(...toIdArray(value.items));
+        if (Array.isArray(value.selected)) collect.push(...toIdArray(value.selected));
+        if (Array.isArray(value.idList)) collect.push(...toIdArray(value.idList));
+        if (Array.isArray(value.nodeIds)) collect.push(...toIdArray(value.nodeIds));
+        if (Array.isArray(value.shapeIds)) collect.push(...toIdArray(value.shapeIds));
+        if (Array.isArray(value.handles)) collect.push(...toIdArray(value.handles));
+        if (value.id != null) collect.push(String(value.id));
+        if (value.primary != null) collect.push(String(value.primary));
+        if (value.current != null) collect.push(String(value.current));
+        return collect.filter(Boolean);
+      }
+      return [];
+    }
+
+    function gatherSelectionIds(snap){
+      const found = new Set();
+      const push = (ids) => ids.forEach((id) => found.add(id));
+      push(toIdArray(snap?.selection));
+      push(toIdArray(snap?.selectedIds));
+      push(toIdArray(snap?.selectionIds));
+      if (snap?.selection && typeof snap.selection === 'object') {
+        for (const key of ['ids','items','selected','idList','nodeIds','shapeIds']) {
+          push(toIdArray(snap.selection[key]));
+        }
+      }
+      return Array.from(found);
+    }
+
+    function ensureSelection(selection, keepId){
+      if (!selection) return;
+      const idVal = keepId != null ? String(keepId) : null;
+      if (Array.isArray(selection)) {
+        selection.length = 0;
+        if (idVal) selection.push(idVal);
+        return;
+      }
+      if (typeof selection === 'object') {
+        const arrKeys = ['ids','items','selected','idList','nodeIds','shapeIds','handles'];
+        arrKeys.forEach((key) => {
+          if (Array.isArray(selection[key])) {
+            selection[key] = idVal ? [idVal] : [];
+          }
+        });
+        const singleKeys = ['id','primary','current','shapeId'];
+        singleKeys.forEach((key) => {
+          if (key in selection) selection[key] = idVal;
+        });
+      }
+    }
+
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    function createSvg(name, attrs){
+      const el = document.createElementNS(SVG_NS, name);
+      if (attrs) {
+        for (const key in attrs) {
+          if (!Object.prototype.hasOwnProperty.call(attrs, key)) continue;
+          const val = attrs[key];
+          if (val == null) continue;
+          el.setAttribute(key, String(val));
+        }
+      }
+      return el;
+    }
+
+    function parsePoints(points){
+      if (!points) return '';
+      if (typeof points === 'string') return points;
+      if (Array.isArray(points)) {
+        return points.map((pt) => {
+          if (!pt) return '';
+          if (Array.isArray(pt)) return pt.join(',');
+          const x = pt.x ?? pt[0] ?? 0;
+          const y = pt.y ?? pt[1] ?? 0;
+          return `${x},${y}`;
+        }).filter(Boolean).join(' ');
+      }
+      return '';
+    }
+
+    function getMatrixFrom(shape){
+      if (!shape || typeof shape !== 'object') return null;
+      const transform = typeof shape.transform === 'string' ? shape.transform : null;
+      if (transform) {
+        const match = transform.match(/matrix\(([^)]+)\)/i);
+        if (match) {
+          const parts = match[1].split(/[,\s]+/).map(parseFloat).filter((n) => Number.isFinite(n));
+          if (parts.length === 6) return parts;
+        }
+      }
+      const matrix = Array.isArray(shape.matrix) ? shape.matrix
+        : Array.isArray(shape.transformMatrix) ? shape.transformMatrix
+        : null;
+      if (matrix && matrix.length === 6) {
+        const vals = matrix.map((n) => Number(n));
+        if (vals.every((n) => Number.isFinite(n))) return vals;
+      }
+      return null;
+    }
+
+    function applyMatrixToItem(item, shape){
+      const m = getMatrixFrom(shape);
+      if (m) {
+        try {
+          item.transform(new paperScope.Matrix(m[0], m[1], m[2], m[3], m[4], m[5]));
+        } catch(err) {
+          console.warn('[Pathfinder] Transform matrix invalid:', err);
+        }
+      }
+    }
+
+    function shapePathString(shape){
+      if (!shape || typeof shape !== 'object') return '';
+      const candidates = [shape.d, shape.path, shape.pathData,
+        shape.data && shape.data.d,
+        shape.props && shape.props.d,
+        shape.attributes && shape.attributes.d,
+        shape.vector && shape.vector.d];
+      for (const cand of candidates) {
+        if (typeof cand === 'string' && cand.trim()) return cand;
+      }
+      return '';
+    }
+
+    function importShape(shape){
+      if (!shape || typeof shape !== 'object') return null;
+      const type = normalizeType(shape.type || shape.kind || shape.shape || shape.nodeName || shape.elementType);
+      try {
+        if (type === 'group' || type === 'g') {
+          const children = [];
+          const sources = [];
+          childKeys.forEach((key) => {
+            if (Array.isArray(shape[key])) sources.push(...shape[key]);
+          });
+          if (Array.isArray(shape.children)) sources.push(...shape.children);
+          if (!sources.length) return null;
+          for (const child of sources) {
+            const item = importShape(child);
+            if (item) children.push(item);
+          }
+          if (!children.length) return null;
+          let merged = children[0];
+          for (let i = 1; i < children.length; i++) {
+            const res = merged.unite(children[i]);
+            merged.remove();
+            children[i].remove();
+            merged = res;
+          }
+          applyMatrixToItem(merged, shape);
+          return merged;
+        }
+
+        const pathData = shapePathString(shape);
+        if (pathData) {
+          const el = createSvg('path', { d: pathData });
+          const item = paperScope.project.importSVG(el, { expandShapes: true, insert: true });
+          applyMatrixToItem(item, shape);
+          return item;
+        }
+
+        if (type === 'rect' || type === 'rectangle') {
+          const attrs = {
+            x: shape.x ?? shape.left ?? 0,
+            y: shape.y ?? shape.top ?? 0,
+            width: shape.width ?? shape.w ?? 0,
+            height: shape.height ?? shape.h ?? 0,
+            rx: shape.rx ?? shape.ry ?? shape.radiusX ?? null,
+            ry: shape.ry ?? shape.rx ?? shape.radiusY ?? null
+          };
+          const el = createSvg('rect', attrs);
+          const item = paperScope.project.importSVG(el, { expandShapes: true, insert: true });
+          applyMatrixToItem(item, shape);
+          return item;
+        }
+
+        if (type === 'circle') {
+          const attrs = {
+            cx: shape.cx ?? shape.x ?? 0,
+            cy: shape.cy ?? shape.y ?? 0,
+            r: shape.r ?? shape.radius ?? 0
+          };
+          const el = createSvg('circle', attrs);
+          const item = paperScope.project.importSVG(el, { expandShapes: true, insert: true });
+          applyMatrixToItem(item, shape);
+          return item;
+        }
+
+        if (type === 'ellipse') {
+          const attrs = {
+            cx: shape.cx ?? shape.x ?? 0,
+            cy: shape.cy ?? shape.y ?? 0,
+            rx: shape.rx ?? shape.radiusX ?? shape.radius ?? 0,
+            ry: shape.ry ?? shape.radiusY ?? shape.radius ?? 0
+          };
+          const el = createSvg('ellipse', attrs);
+          const item = paperScope.project.importSVG(el, { expandShapes: true, insert: true });
+          applyMatrixToItem(item, shape);
+          return item;
+        }
+
+        if (type === 'polygon' || type === 'polyline') {
+          const pts = parsePoints(shape.points);
+          if (!pts) return null;
+          const el = createSvg(type === 'polyline' ? 'polyline' : 'polygon', { points: pts });
+          const item = paperScope.project.importSVG(el, { expandShapes: true, insert: true });
+          applyMatrixToItem(item, shape);
+          return item;
+        }
+      } catch (err) {
+        console.warn('[Pathfinder] Conversie eșuată pentru formă', shape, err);
+      }
+      return null;
+    }
+
+    function exportPathData(item){
+      if (!item) return '';
+      try {
+        const exported = item.exportSVG({ asString: false, precision: 4 });
+        function collect(node){
+          if (!node) return '';
+          const name = (node.nodeName || node.tagName || '').toLowerCase();
+          if (name === 'path') {
+            const d = node.getAttribute('d');
+            return d ? d : '';
+          }
+          let out = '';
+          const children = node.childNodes || node.children || [];
+          for (let i = 0; i < children.length; i++) {
+            out += ' ' + collect(children[i]);
+          }
+          return out.trim();
+        }
+        return collect(exported).trim();
+      } catch (err) {
+        console.warn('[Pathfinder] Export SVG eșuat:', err);
+        return '';
+      }
+    }
+
+    function applyPathToShape(shape, pathData){
+      const d = (pathData || '').trim();
+      if ('d' in shape || (!('path' in shape) && !('pathData' in shape))) shape.d = d;
+      if ('path' in shape) shape.path = d;
+      if ('pathData' in shape) shape.pathData = d;
+      if (shape.props && 'd' in shape.props) shape.props.d = d;
+      if (shape.data && 'd' in shape.data) shape.data.d = d;
+      if (shape.attributes && 'd' in shape.attributes) shape.attributes.d = d;
+      if (shape.vector && typeof shape.vector === 'object') shape.vector.d = d;
+      shape.type = 'path';
+      if ('kind' in shape) shape.kind = 'path';
+      if (typeof shape.shape === 'string') shape.shape = 'path';
+      if ('nodeName' in shape) shape.nodeName = 'path';
+      if ('elementType' in shape) shape.elementType = 'path';
+      delete shape.width; delete shape.height; delete shape.rx; delete shape.ry;
+      delete shape.cx; delete shape.cy; delete shape.r; delete shape.points;
+      delete shape.radius; delete shape.radiusX; delete shape.radiusY;
+    }
+
+    function combine(base, next, method){
+      if (!base || !next) return base;
+      const fn = base[method];
+      if (typeof fn !== 'function') return base;
+      const result = fn.call(base, next);
+      if (result) {
+        base.remove();
+        next.remove();
+        return result;
+      }
+      return base;
+    }
+
+    function prepareContext(minCount){
+      const source = (typeof window.getSnapshot === 'function') ? window.getSnapshot()
+        : (window.LCS && typeof window.LCS.state === 'function') ? window.LCS.state()
+        : null;
+      if (!source) {
+        notify('Nu există snapshot disponibil.');
+        return null;
+      }
+      const snap = cloneSnapshot(source);
+      const selectedIds = gatherSelectionIds(snap);
+      if (!selectedIds.length || selectedIds.length < minCount) {
+        notify(minCount > 1 ? 'Selectează cel puțin două forme.' : 'Selectează o formă.');
+        return null;
+      }
+      const shapeMap = gatherShapeMap(snap);
+      const seen = new Set();
+      const refs = [];
+      for (const rawId of selectedIds) {
+        const id = String(rawId);
+        if (seen.has(id)) continue;
+        const ref = shapeMap.get(id);
+        if (ref) {
+          refs.push(ref);
+          seen.add(id);
+        }
+      }
+      if (refs.length < minCount) {
+        notify('Selecția nu conține suficiente forme vectoriale.');
+        return null;
+      }
+      refs.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      return { snap, refs, selectionIds: selectedIds };
+    }
+
+    function applyAndPush(snap, reason){
+      const label = `pathfinder-${reason}`;
+      try {
+        if (typeof window.applySnapshot === 'function') {
+          window.applySnapshot(snap);
+        } else if (window.__LCS_INTERNAL__ && window.__LCS_INTERNAL__.appState) {
+          Object.assign(window.__LCS_INTERNAL__.appState, snap);
+          window.dispatchEvent(new CustomEvent('lcs:state-applied', { detail: { kind: label, snapshot: snap } }));
+        }
+      } catch (err) {
+        console.error('[Pathfinder] applySnapshot a eșuat:', err);
+      }
+      if (typeof window.pushHistoryCoalesced === 'function') {
+        window.pushHistoryCoalesced(label, 200);
+      } else if (typeof window.pushHistory === 'function') {
+        window.pushHistory(label);
+      } else if (window.LCS && typeof window.LCS.push === 'function') {
+        window.LCS.push(label);
+      }
+    }
+
+    function perform(mode){
+      const minCount = mode === 'to-path' ? 1 : 2;
+      const ctx = prepareContext(minCount);
+      if (!ctx) return;
+      const { snap, refs } = ctx;
+
+      const items = refs.map((ref) => ({ ref, item: importShape(ref.node) })).filter((entry) => entry.item);
+      if (items.length < minCount) {
+        paperScope.project.clear();
+        notify('Formele selectate nu pot fi convertite.');
+        return;
+      }
+
+      if (mode === 'to-path') {
+        let changed = false;
+        for (const entry of items) {
+          const d = exportPathData(entry.item);
+          if (d) {
+            applyPathToShape(entry.ref.node, d);
+            changed = true;
+          }
+        }
+        paperScope.project.clear();
+        if (!changed) {
+          notify('Nu s-au găsit forme de convertit.');
+          return;
+        }
+        applyAndPush(snap, mode);
+        notify('Forme convertite la path.', 2000);
+        return;
+      }
+
+      let baseEntry;
+      if (mode === 'minus-back') {
+        baseEntry = items[items.length - 1];
+      } else {
+        baseEntry = items[0];
+      }
+
+      let result = baseEntry.item;
+      if (mode === 'unite') {
+        for (let i = 1; i < items.length; i++) {
+          result = combine(result, items[i].item, 'unite');
+        }
+      } else if (mode === 'intersect') {
+        for (let i = 1; i < items.length; i++) {
+          result = combine(result, items[i].item, 'intersect');
+        }
+      } else if (mode === 'exclude') {
+        for (let i = 1; i < items.length; i++) {
+          result = combine(result, items[i].item, 'exclude');
+        }
+      } else if (mode === 'minus-front' || mode === 'minus-back') {
+        const cutters = (mode === 'minus-back') ? items.slice(0, items.length - 1) : items.slice(1);
+        for (const cutter of cutters) {
+          result = combine(result, cutter.item, 'subtract');
+        }
+      }
+
+      const pathData = exportPathData(result);
+      paperScope.project.clear();
+      if (!pathData) {
+        notify('Rezultatul operației este gol.');
+        return;
+      }
+
+      applyPathToShape(baseEntry.ref.node, pathData);
+
+      const keepId = getShapeId(baseEntry.ref.node);
+      const toRemove = refs.filter((ref) => ref !== baseEntry.ref);
+      toRemove.sort((a, b) => {
+        const ai = a.isArray ? a.key : 0;
+        const bi = b.isArray ? b.key : 0;
+        return bi - ai;
+      });
+      for (const ref of toRemove) {
+        if (ref.isArray && Array.isArray(ref.owner)) {
+          ref.owner.splice(ref.key, 1);
+        } else if (ref.owner && typeof ref.owner === 'object' && ref.key != null) {
+          delete ref.owner[ref.key];
+        }
+      }
+      ensureSelection(snap.selection, keepId);
+      applyAndPush(snap, mode);
+      notify(`Pathfinder: ${mode.replace('-', ' ')}`, 2000);
+    }
+
+    const bindings = [
+      ['pf-unite', 'unite'],
+      ['pf-intersect', 'intersect'],
+      ['pf-minus-front', 'minus-front'],
+      ['pf-minus-back', 'minus-back'],
+      ['pf-exclude', 'exclude'],
+      ['pf-to-path', 'to-path']
+    ];
+
+    bindings.forEach(([id, mode]) => {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      btn.addEventListener('click', () => perform(mode));
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey) return;
+      const active = document.activeElement;
+      if (active && (active.isContentEditable || ['input','textarea','select'].includes((active.tagName || '').toLowerCase()))) return;
+      const map = { u: 'unite', i: 'intersect', f: 'minus-front', b: 'minus-back', x: 'exclude' };
+      const key = (e.key || '').toLowerCase();
+      const mode = map[key];
+      if (!mode) return;
+      e.preventDefault();
+      perform(mode);
+    });
+
+    notify(defaultHint, 0);
+    console.info('[Pathfinder] UI activat.');
+  })();
+  </script>
 </body>
 </html>
