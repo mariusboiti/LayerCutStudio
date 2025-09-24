@@ -3093,5 +3093,61 @@
     }, {passive:false});
   })();
   </script>
+  <!-- LASER OPS • PATCH 4: Hatch Engrave -->
+  <style>
+    #hatch-box{position:fixed;right:16px;top:412px;z-index:99993;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.15);padding:10px;min-width:260px}
+    #hatch-box .row{display:flex;gap:6px;align-items:center;margin:6px 0}
+  </style>
+  <div id="hatch-box">
+    <div class="row"><label style="width:90px">Spacing (mm)</label><input id="hatch-mm" type="number" min="0.1" step="0.1" value="0.6" style="width:84px"></div>
+    <div class="row"><label style="width:90px">Angle (°)</label><input id="hatch-ang" type="number" min="0" max="180" step="1" value="45" style="width:84px"></div>
+    <div class="row"><button id="hatch-preview">Preview Hatch</button><button id="hatch-export">Export Hatch SVG</button></div>
+  </div>
+  <script src="https://unpkg.com/paper@0.12.17/dist/paper-full.min.js"></script>
+  <script>
+  (function(){
+    if (window.__LASER_HATCH__) return; window.__LASER_HATCH__=true;
+    function mainSVG(){ var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null; a.sort(function(A,B){function ar(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];var r=x.getBoundingClientRect();return r.width*r.height||0} return ar(B)-ar(A)}); return a[0] }
+    function cloneMain(){ var m=mainSVG(); return m? m.cloneNode(true):null; }
+    function toPr(svg){ var c=document.createElement('canvas'); paper.setup(c); var s=new XMLSerializer().serializeToString(svg); if(!/xmlns=/.test(s)) s=s.replace('<svg','<svg xmlns="http://www.w3.org/2000/svg"'); var imported=paper.project.importSVG(s,{expandShapes:true,insert:true}); return paper.project; }
+    function fromPr(pr){ var str=pr.exportSVG({asString:true,precision:2}); var doc=(new DOMParser()).parseFromString(str,'image/svg+xml'); return document.importNode(doc.documentElement,true); }
+    function hatch(svg, mm, ang){
+      var pr=toPr(svg), px=96/25.4, step=Math.max(0.1, Number(mm||0.6))*px, angle=(Number(ang)||45)*Math.PI/180;
+      // colectăm shapes care au fill “engrave” (negru) – fallback: orice fill non-none
+      // desenăm grilă de linii peste viewBox
+      var rect=pr.view.bounds; var len=Math.hypot(rect.width, rect.height)*1.2;
+      var lines=new paper.Group();
+      var dir=new paper.Point(Math.cos(angle), Math.sin(angle));
+      var n=Math.ceil((rect.width+rect.height)/step)+2;
+      var origin=rect.topLeft.subtract(dir.multiply(len/2));
+      for (var i=-n;i<n;i++){
+        var p=origin.add(new paper.Point(-Math.sin(angle), Math.cos(angle)).multiply(i*step));
+        var l=new paper.Path.Line(p, p.add(dir.multiply(len))); l.strokeColor='black'; l.strokeWidth=1; lines.addChild(l);
+      }
+      // intersectăm liniile cu orice formă cu fill
+      pr.getItems({class:paper.PathItem}).forEach(function(item){
+        try{
+          if (item.fillColor && item.fillColor.alpha>0){ // considerăm “engrave”
+            var clipped=lines.clone();
+            clipped = clipped.intersect(item);
+            lines.remove();
+            lines = clipped;
+            item.remove();
+          }
+        }catch(_){ /* ignore */ }
+      });
+      // curățăm: doar linii cu stroke, fără fill
+      lines.getItems({class:paper.PathItem}).forEach(function(p){
+        p.fillColor = null;
+        p.strokeColor = 'black';
+        p.strokeWidth = 0.2;
+      });
+      return fromPr(pr);
+    }
+    function download(svg,name){ var xmlHead='<?xml version="1.0" encoding="UTF-8"?>\n'; var s=new XMLSerializer().serializeToString(svg); if(!/xmlns=/.test(s)) s=s.replace('<svg','<svg xmlns="http://www.w3.org/2000/svg"'); var blob=new Blob([xmlHead+s],{type:'image/svg+xml'}); var url=URL.createObjectURL(blob); var a=document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); setTimeout(function(){URL.revokeObjectURL(url); a.remove();},0); }
+    document.getElementById('hatch-preview').onclick=function(){ var b=cloneMain(); if(!b){alert('No SVG');return;} var out=hatch(b, document.getElementById('hatch-mm').value, document.getElementById('hatch-ang').value); var w=window.open(); w.document.write(out.outerHTML); };
+    document.getElementById('hatch-export').onclick=function(){ var b=cloneMain(); if(!b){alert('No SVG');return;} var out=hatch(b, document.getElementById('hatch-mm').value, document.getElementById('hatch-ang').value); download(out,'layercut-hatch.svg'); };
+  })();
+  </script>
 </body>
 </html>
