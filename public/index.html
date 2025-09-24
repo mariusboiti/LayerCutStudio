@@ -3795,7 +3795,7 @@
             const sel = Array.isArray(s.selection) ? s.selection : (s.selection ? [s.selection] : []);
             if (sel.length){
               sel.forEach(id=>{
-                const cand = document.querySelector('[data-lcs-id="'+id+'"], [data-id="'+id+'"], #'+CSS.escape(id));
+                const cand = document.querySelector('[data-lcs-id="'+id+'"], [data-id="'+id+'"], #'+(window.CSS && CSS.escape ? CSS.escape(id) : id));
                 if (cand) els.push(cand);
               });
             }
