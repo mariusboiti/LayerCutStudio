@@ -3915,6 +3915,121 @@
     }, {passive:false});
   })();
   </script>
+  <!-- Safari Kit • PATCH 2: Leaves (Monstera + Banana) -->
+  <style>
+    #safari-leaves{position:fixed;right:16px;top:236px;z-index:99990;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.15);padding:10px;min-width:220px}
+    #safari-leaves .row{display:flex;gap:6px;align-items:center;margin:6px 0}
+    #safari-leaves button{border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:6px 10px;cursor:pointer}
+    #safari-leaves .small{font:12px system-ui;color:#374151}
+  </style>
+  <div id="safari-leaves" data-export="false">
+    <div class="row"><button id="sf-leaf-a">🪴 Monstera</button> <input id="sf-leaf-a-color" type="color" value="#64a30b"/></div>
+    <div class="row"><button id="sf-leaf-b">🌿 Banana</button>   <input id="sf-leaf-b-color" type="color" value="#9dd38c"/></div>
+    <div class="row"><span class="small">Click pe frunză → select • Alt+drag pentru rotație.</span></div>
+  </div>
+  <script>
+  (function(){
+    if (window.__SAFARI_LEAVES__) return; window.__SAFARI_LEAVES__=true;
+
+    function mainSVG(){
+      var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
+      a.sort(function(A,B){
+        function ar(x){
+          var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
+          if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];
+          var r=x.getBoundingClientRect(); return r.width*r.height||0;
+        }
+        return ar(B)-ar(A);
+      });
+      return a[0];
+    }
+
+    function safariLayer(){
+      var sv=mainSVG(); if(!sv) return null;
+      var g=sv.querySelector('g.lcs-safari');
+      if(!g){
+        g=document.createElementNS('http://www.w3.org/2000/svg','g');
+        g.setAttribute('class','lcs-safari');
+        sv.appendChild(g);
+      }
+      return g;
+    }
+
+    function vbCenter(){
+      var sv=mainSVG(); if(!sv) return {cx:0,cy:0};
+      var b=(sv.getAttribute('viewBox')||'').split(/\s+/).map(Number);
+      if(b.length===4&&b.every(isFinite)) return {cx:b[0]+b[2]/2,cy:b[1]+b[3]/2};
+      var r=sv.getBoundingClientRect(); return {cx:r.width/2,cy:r.height/2};
+    }
+
+    function addLeaf(kind,color){
+      var g=safariLayer(), c=vbCenter(); if(!g) return;
+      var grp=document.createElementNS('http://www.w3.org/2000/svg','g');
+      grp.setAttribute('class','safari leaf selected');
+      grp.setAttribute('data-selected','1');
+      grp.setAttribute('transform','translate('+(c.cx-120)+','+(c.cy-60)+')');
+      grp.setAttribute('data-export','true');
+      grp.setAttribute('tabindex','0');
+
+      if (kind==='a'){ // Monstera
+        var p=document.createElementNS('http://www.w3.org/2000/svg','path');
+        p.setAttribute('d','M120,20 C60,-10 -10,30 5,90 C25,160 120,170 170,120 C205,85 200,50 170,35 C145,22 125,30 120,20 Z M62,80 c8,-12 18,-22 30,-28 c-12,8 -22,18 -30,28 Z M88,110 c10,-10 20,-18 32,-24 c-12,8 -22,16 -32,24 Z');
+        p.setAttribute('fill', color||'#64a30b');
+        p.setAttribute('stroke','#2a3a12');
+        p.setAttribute('stroke-width','3');
+        grp.appendChild(p);
+      } else {        // Banana
+        var p2=document.createElementNS('http://www.w3.org/2000/svg','path');
+        p2.setAttribute('d','M20,120 C20,40 140,10 190,30 C160,40 130,60 110,85 C90,110 60,140 40,160 C30,150 20,140 20,120 Z');
+        p2.setAttribute('fill', color||'#9dd38c');
+        p2.setAttribute('stroke','#2a3a12');
+        p2.setAttribute('stroke-width','3');
+        grp.appendChild(p2);
+      }
+
+      g.appendChild(grp);
+      try{ window.LCS && window.LCS.history && window.LCS.history.push('leaf-'+kind); }catch(_){ }
+    }
+
+    var aBtn=document.getElementById('sf-leaf-a');
+    var bBtn=document.getElementById('sf-leaf-b');
+    aBtn && (aBtn.onclick=function(){ addLeaf('a', (document.getElementById('sf-leaf-a-color')||{}).value || '#64a30b'); });
+    bBtn && (bBtn.onclick=function(){ addLeaf('b', (document.getElementById('sf-leaf-b-color')||{}).value || '#9dd38c'); });
+
+    // select + drag + rotație cu Alt
+    (function dragRotate(){
+      var cur=null, start=null;
+      function onDown(e){
+        var g=e.target.closest && e.target.closest('g.safari.leaf'); if(!g) return;
+        cur=g; start={x:e.clientX,y:e.clientY, tr:g.getAttribute('transform')||'translate(0,0) rotate(0)'};
+        document.querySelectorAll('g.safari.leaf').forEach(function(n){ n.removeAttribute('data-selected'); n.classList.remove('selected'); });
+        g.setAttribute('data-selected','1'); g.classList.add('selected');
+        e.preventDefault();
+      }
+      function parse(tr){
+        var t={tx:0,ty:0,rot:0};
+        var m=tr.match(/translate\(([^)]+)\)/i); if(m){ var a=m[1].split(/[, ]+/).map(Number); t.tx=a[0]||0; t.ty=a[1]||0; }
+        var m2=tr.match(/rotate\(([^)]+)\)/i); if(m2){ t.rot=parseFloat(m2[1])||0; }
+        return t;
+      }
+      function onMove(e){
+        if(!cur||!start) return;
+        var dX=e.clientX-start.x, dY=e.clientY-start.y;
+        var t=parse(start.tr);
+        if (e.altKey){ var ang = t.rot + dX*0.4; cur.setAttribute('transform','translate('+t.tx+','+t.ty+') rotate('+ang+')'); }
+        else { cur.setAttribute('transform','translate('+(t.tx+dX)+','+(t.ty+dY)+') rotate('+t.rot+')'); }
+      }
+      function onUp(){
+        if(cur){ try{ window.LCS&&window.LCS.history&&window.LCS.history.push('leaf-move'); }catch(_){ } }
+        cur=null; start=null;
+      }
+      document.addEventListener('mousedown', onDown, true);
+      document.addEventListener('mousemove', onMove, true);
+      document.addEventListener('mouseup', onUp, true);
+    })();
+  })();
+  </script>
+
   <!-- Safari Kit • PATCH 1: Round Sign Base -->
   <style>
     #safari-tools{position:fixed;right:16px;top:86px;z-index:99990;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.15);padding:10px;min-width:220px}
@@ -3924,7 +4039,7 @@
     #safari-tools input[type="range"]{width:120px}
     #safari-tools .small{font:12px system-ui;color:#374151}
   </style>
-  <div id="safari-tools">
+  <div id="safari-tools" data-export="false">
     <h4>Safari Round Sign</h4>
     <div class="row"><button id="sf-add-base">➕ Add Base</button><span class="small">cerc fundal</span></div>
     <div class="row">
@@ -3943,9 +4058,13 @@
     function mainSVG(){
       var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
       a.sort(function(A,B){
-        function ar(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
-          if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3]; var r=x.getBoundingClientRect(); return r.width*r.height||0}
-        return ar(B)-ar(A)});
+        function ar(x){
+          var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
+          if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];
+          var r=x.getBoundingClientRect(); return r.width*r.height||0;
+        }
+        return ar(B)-ar(A);
+      });
       return a[0];
     }
     function ensureSafariLayer(){
@@ -3960,7 +4079,7 @@
       if (vb.length===4&&vb.every(isFinite)) return {x:vb[0],y:vb[1],w:vb[2],h:vb[3],cx:vb[0]+vb[2]/2,cy:vb[1]+vb[3]/2};
       var r=sv.getBoundingClientRect(); return {x:0,y:0,w:r.width,h:r.height,cx:r.width/2,cy:r.height/2};
     }
-    function pxPerMM(){ return 96/25.4; } // 96 px = 1in = 25.4mm
+    function pxPerMM(){ return 96/25.4; }
     function addOrUpdateBase(){
       var sv=mainSVG(), lay=ensureSafariLayer(), vb=viewBoxInfo(); if(!sv||!lay||!vb) return;
       var diaMM = Number(document.getElementById('sf-dia').value)||450;
@@ -3980,7 +4099,8 @@
       c.setAttribute('stroke', '#1f2937');
       c.setAttribute('stroke-width','8');
       c.setAttribute('data-export','true');
-      try{ window.LCS && window.LCS.history && window.LCS.history.push('safari-base'); }catch(_){}}
+      try{ window.LCS && window.LCS.history && window.LCS.history.push('safari-base'); }catch(_){}
+    }
     var btn=document.getElementById('sf-add-base');
     btn && (btn.onclick=addOrUpdateBase);
     var rng=document.getElementById('sf-dia'), out=document.getElementById('sf-dia-val');
@@ -3997,7 +4117,7 @@
     #lcs-layers-lite .name{flex:1;font:12px/1.2 system-ui;color:#111827}
     #lcs-layers-lite button{border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:4px 6px;cursor:pointer;font:600 12px/1 system-ui}
   </style>
-  <div id="lcs-layers-lite"></div>
+  <div id="lcs-layers-lite" data-export="false"></div>
   <script>
   (function(){
     if (window.__LCS_LAYERS_LITE__) return; window.__LCS_LAYERS_LITE__=true;
@@ -4041,7 +4161,7 @@
     #lcs-swatches .sw{width:20px;height:20px;border:1px solid #e5e7eb;border-radius:6px;cursor:pointer}
     #sw-mode{font:600 12px/1 system-ui;border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:6px 8px;cursor:pointer}
   </style>
-  <div id="lcs-swatches">
+  <div id="lcs-swatches" data-export="false">
     <button id="sw-mode" title="Toggle Stroke/Fill">Stroke</button>
     <div class="sw" data-c="#000000" style="background:#000000"></div>
     <div class="sw" data-c="#ff0000" style="background:#ff0000"></div>
@@ -4079,7 +4199,12 @@
     }
     function applyDom(color){
       var els=selectedDom(); if(!els.length) return false;
-      els.forEach(function(el){ try{ if(mode==='stroke'){ el.setAttribute('stroke', color); if(!el.getAttribute('stroke-width')) el.setAttribute('stroke-width','1'); } else { el.setAttribute('fill', color); } }catch(_){} });
+      els.forEach(function(el){
+        try{
+          if(mode==='stroke'){ el.setAttribute('stroke', color); if(!el.getAttribute('stroke-width')) el.setAttribute('stroke-width','1'); }
+          else { el.setAttribute('fill', color); }
+        }catch(_){}
+      });
       try{ window.LCS && window.LCS.history && window.LCS.history.push('color-'+mode+'-dom'); }catch(_){ }
       return true;
     }
@@ -4089,7 +4214,8 @@
     modeBtn.onclick=function(){ mode = (mode==='stroke'?'fill':'stroke'); modeBtn.textContent = (mode==='stroke'?'Stroke':'Fill'); };
     window.addEventListener('keydown', function(e){
       if(isEditable(e.target)) return; if(!(e.ctrlKey||e.metaKey)) return;
-      var k=(e.key||'').toLowerCase(); if(k==='b'){ e.preventDefault(); mode='stroke'; modeBtn.textContent='Stroke'; }
+      var k=(e.key||'').toLowerCase();
+      if(k==='b'){ e.preventDefault(); mode='stroke'; modeBtn.textContent='Stroke'; }
       if(k==='f'){ e.preventDefault(); mode='fill'; modeBtn.textContent='Fill'; }
     }, {passive:false});
   })();
