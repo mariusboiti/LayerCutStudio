@@ -66,6 +66,7 @@
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/opentype.js@1.3.4/dist/opentype.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/paper.js/0.12.15/paper-core.min.js" integrity="sha512-B/1GJt8BK0WRxUfHb44wSIB86ugvWK+plV4CnIaWnflHTZCV7U866CrVnSYbycHtHTP5Lx9XzVD2TFAnVb4S6g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="https://cdn.jsdelivr.net/npm/clipper-lib@6.4.2/clipper.js"></script>
 
   <style>
@@ -177,6 +178,9 @@
    })();
  </script>
 <body>
+<!-- Pathfinder auxiliary canvas for Paper.js -->
+<canvas id="pf-canvas" width="1" height="1" style="display:none"></canvas>
+
   <div class="topbar">
     <div class="topbar-inner">
       <!-- logo simplu (două forme suprapuse) -->
@@ -3915,6 +3919,74 @@
     }, {passive:false});
   })();
   </script>
+<!-- Helpers pentru Paper.js (non-invaziv, fără dublu-setup) -->
+<script>
+(function(){
+  if (window.__PF_HELPERS__) return; window.__PF_HELPERS__=true;
+
+  function mainSVG(){
+    var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
+    a.sort(function(A,B){
+      function ar(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
+        if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3]; var r=x.getBoundingClientRect(); return r.width*r.height||0}
+      return ar(B)-ar(A)});
+    return a[0];
+  }
+  function getSelectionDom(){
+    var root=mainSVG()||document;
+    var els=[].slice.call(root.querySelectorAll('[data-selected="1"],[aria-selected="true"],.selected'));
+    try{
+      if (!els.length && typeof window.getSnapshot==='function'){
+        var s=window.getSnapshot()||{}, ids=Array.isArray(s.selection)?s.selection:(s.selection?[s.selection]:[]);
+        ids.forEach(function(id){
+          var sel=document.querySelector('[data-lcs-id="'+id+'"],[data-id="'+id+'"],#'+(window.CSS&&CSS.escape?CSS.escape(id):id));
+          if (sel) els.push(sel);
+        });
+      }
+    }catch(_){}
+    els = els.filter(function(n){ return !!n.ownerSVGElement || n.tagName==='svg'; });
+    return els;
+  }
+  function asSVGString(nodes){
+    var svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svg.setAttribute('xmlns','http://www.w3.org/2000/svg');
+    nodes.forEach(function(n){ svg.appendChild(n.cloneNode(true)); });
+    return new XMLSerializer().serializeToString(svg);
+  }
+  function importToPaper(nodes){
+    if (!window.paper) return [];
+    var pfCanvas = document.getElementById('pf-canvas');
+    try{
+      if (!paper.project || !paper.project.view) paper.setup(pfCanvas);
+    }catch(_){}
+    paper.project.clear();
+    var svgString = asSVGString(nodes);
+    var imported = paper.project.importSVG(svgString, { expandShapes: true, insert: true });
+    var items=[];
+    imported.children && imported.children.forEach(function(ch){ ch.flatten && ch.flatten(0.1); });
+    imported.descendants && imported.descendants.forEach(function(it){
+      if (it.className==='Path' || it.className==='CompoundPath'){ items.push(it); }
+    });
+    return items;
+  }
+  function exportPaperToElement(item, styleFrom){
+    if (!window.paper || !item) return null;
+    var str = item.exportSVG({ asString:true, precision:2 });
+    var doc = new DOMParser().parseFromString(str, 'image/svg+xml');
+    var el = doc.documentElement;
+    if (styleFrom){
+      ['fill','stroke','stroke-width','stroke-linejoin','stroke-linecap'].forEach(function(k){
+        var v=styleFrom.getAttribute(k); if (v!=null) el.setAttribute(k,v);
+      });
+    }
+    return document.importNode(el, true);
+  }
+  function pushHistory(tag){ try{ window.LCS && window.LCS.history && window.LCS.history.push(tag||'pathfinder'); }catch(_){ } }
+
+  window.__PF__ = { mainSVG, getSelectionDom, asSVGString, importToPaper, exportPaperToElement, pushHistory };
+})();
+</script>
+
 <!-- Pathfinder (Paper.js) – Unite/Intersect/Subtract/Exclude/To Path -->
 <style>
   #lcs-pathfinder{position:fixed;right:16px;top:386px;z-index:99990;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.15);padding:10px;min-width:260px}
@@ -3942,7 +4014,6 @@
   if (window.__LCS_PATHFINDER__) return;
   window.__LCS_PATHFINDER__ = true;
 
-  // Asigură UI-ul dacă a fost șters
   function ensureUI(){
     var panel=document.getElementById('lcs-pathfinder');
     if(!panel){
