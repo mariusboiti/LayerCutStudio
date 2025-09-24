@@ -155,11 +155,20 @@
     .eye-btn svg{ width:18px; height:18px; display:block; }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; background:#fafafa; }
-    /* Full-width: fără margini laterale, container întins pe toată pagina */
-    .wrap { max-width: none; margin: 0; padding: 0; width: 100%; }
-    /* A doua coloană umple tot, fără spațiu pe margini; păstrăm doar spațiul dintre coloane */
-    .row { display: grid; grid-template-columns: 360px minmax(0,1fr); gap: 0 16px; align-items: start; }
-    .card { background: #fff; border:1px solid #e5e7eb; border-radius: 12px; padding: 16px; }
+    /* Container central frumos, cu padding lateral */
+    .wrap { max-width: 1200px; margin: 16px auto 48px; padding: 0 16px; width: 100%; }
+    /* 3 coloane: stânga (controls), canvas, dreapta (dock) */
+    .row {
+      display: grid;
+      grid-template-columns: 360px minmax(0,1fr) 300px;
+      gap: 16px;
+      align-items: start;
+    }
+    .card { background: #fff; border:1px solid #e5e7eb; border-radius: 12px; padding: 16px; box-shadow: 0 1px 2px rgba(15,23,42,0.04); }
+    /* Dock dreapta cu poziționare sticky */
+    #tools-dock { position: sticky; top: 72px; display: flex; flex-direction: column; gap: 12px; }
+    #tools-dock .dock-section { padding: 12px; border:1px solid #e5e7eb; border-radius:12px; background:#fff; }
+    #tools-dock .dock-title { font-weight:700; font-size:13px; color:#111827; margin-bottom:8px; }
 
     /* Titluri/etichete mai vizibile */
     h2 { font-size: 28px; font-weight: 800; margin: 16px 0; letter-spacing: .2px; }
@@ -187,8 +196,9 @@
     .control-compact .label { font-size:11px; font-weight:600; margin: 0 0 2px 0; }
     .control-compact input[type="number"]{ padding:6px 8px; font-size:13px; }
 
-    .grid {
-      width:100%; height:700px; border-radius:12px; border:1px solid var(--ui); background:#fff;
+    .grid { /* canvas preview */
+      width:100%; height:700px;
+      border-radius:12px; border:1px solid var(--ui); background:#fff;
       background-image:
         linear-gradient(var(--grid) 1px, transparent 1px),
         linear-gradient(90deg, var(--grid) 1px, transparent 1px);
@@ -239,6 +249,13 @@
    .zoom-overlay input[type="range"]{ width:170px; }
    .zoom-overlay .btn{ padding:6px 10px; background:#0f172a; border-color:#0f172a; }
    .svg-preview { display:block; width:100%; height:100%; }
+   /* spațiu mic între safari-stage și grid */
+   #safari-stage { margin-top: 16px; }
+   /* pe ecrane mici, o singură coloană; dock-ul coboară sub canvas */
+   @media (max-width: 1024px){
+     .row { grid-template-columns: 1fr; }
+     #tools-dock { position: static; }
+   }
   </style>
 </head>
  <!-- KILO BEACON: confirm că acest index.html e servit -->
@@ -296,7 +313,7 @@
  </div>
 
  <div class="wrap">
-   <div id="lcs-project-tools" style="margin:16px auto;max-width:1200px;padding:16px;border:1px solid #d1d5db;border-radius:12px;background:#fff;box-shadow:0 1px 2px rgba(15,23,42,0.04);">
+   <div id="lcs-project-tools" class="card">
      <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;">
        <div style="display:flex;flex-direction:column;gap:4px;">
          <div style="font-size:14px;font-weight:600;color:#111827;">Project &amp; autosave</div>
@@ -316,7 +333,9 @@
        <input id="lcs-import" type="file" accept=".lcs,application/json" style="display:none" />
      </div>
    </div>
-    <div id="app" class="row"></div>
+   <div id="app" class="row"></div>
+   <!-- Dockul din dreapta (se populează automat de script) -->
+   <aside id="tools-dock" aria-label="Tools Dock"></aside>
   </div>
   <!-- HUD eliminat (ascuns) -->
   <div id="hud" class="hud"></div>
@@ -4484,6 +4503,50 @@
     };
     fitStage();
     window.addEventListener('resize', fitStage, { passive: true });
+  })();
+  </script>
+  <script>
+  // === UI Docking: mută panourile flotante în #tools-dock pe baza textului ===
+  (function(){
+    function findPanelByText(fragment){
+      const all = Array.from(document.querySelectorAll('body *'))
+        .filter(n => n.childElementCount === 0 && n.textContent && n.textContent.trim().length);
+      const leaf = all.find(n => n.textContent.toLowerCase().includes(fragment));
+      if(!leaf) return null;
+      // urcă până la un container rezonabil
+      return leaf.closest('.card') || leaf.closest('[style*="border"]') || leaf.closest('div');
+    }
+    function dock(title, panel){
+      if(!panel) return;
+      const dock = document.getElementById('tools-dock');
+      if(!dock) return;
+      // evită dublarea: dacă e deja în dock, ieși
+      if(dock.contains(panel)) return;
+      const wrap = document.createElement('div');
+      wrap.className = 'dock-section';
+      if(title){
+        const h = document.createElement('div');
+        h.className = 'dock-title';
+        h.textContent = title;
+        wrap.appendChild(h);
+      }
+      wrap.appendChild(panel);
+      dock.appendChild(wrap);
+    }
+    function runDock(){
+      // Laser Ops
+      dock('Laser Ops', findPanelByText('preflight'));
+      // Boolean Ops (Unite/Intersect/...)
+      dock('Boolean Ops', findPanelByText('unite'));
+      // Safari Kit
+      dock('Safari Kit', findPanelByText('add giraffe'));
+      dock('Safari Kit', findPanelByText('name preset'));
+      dock('Safari Kit', findPanelByText('apply safari layout'));
+    }
+    // rulează după ce React a montat UI-ul
+    const obs = new MutationObserver(() => { runDock(); });
+    obs.observe(document.body, { childList:true, subtree:true });
+    window.addEventListener('load', runDock, { once:true });
   })();
   </script>
 
