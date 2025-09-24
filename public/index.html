@@ -197,6 +197,124 @@
    })();
  </script>
 <body>
+
+    <!-- === PATCH: Boolean Ops fixed top bar (Illustrator-style icons) === -->
+    <style>
+      :root{
+        --bo-top: 16px;
+        --bo-right: 72px;
+      }
+      #boolean-ops{
+        position:fixed;top:var(--bo-top);right:var(--bo-right);z-index:99995;
+        display:flex;gap:6px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;
+        box-shadow:0 6px 18px rgba(0,0,0,.15);padding:6px 8px
+      }
+      #boolean-ops button{
+        border:0;background:transparent;cursor:pointer;padding:6px;border-radius:8px;
+        display:flex;align-items:center;justify-content:center;color:#111827
+      }
+      #boolean-ops button:hover{background:#f3f4f6;color:#0f172a}
+      #boolean-ops button:active{transform:translateY(1px)}
+      #boolean-ops svg{width:20px;height:20px;stroke:currentColor;stroke-width:2;fill:none;transition:all .15s ease}
+      #boolean-ops button:hover svg path,
+      #boolean-ops button.is-active svg path{ fill: currentColor; stroke: none; }
+      #boolean-ops button.is-active{ background:#e5e7eb; color:#0f172a; }
+      @media (max-width: 900px){
+        :root{ --bo-top: 12px; --bo-right: 60px; }
+      }
+    </style>
+    <div id="boolean-ops" data-export="false" aria-label="Boolean Ops">
+      <button id="bo-unite" title="Unite (Alt+U)">
+        <svg viewBox="0 0 24 24"><path d="M3 3h8v8H3zM13 13h8v8h-8zM7 7h10v10H7z"/></svg>
+      </button>
+      <button id="bo-intersect" title="Intersect (Alt+I)">
+        <svg viewBox="0 0 24 24"><path d="M7 7h10v10H7z"/></svg>
+      </button>
+      <button id="bo-minus-front" title="Minus Front (Alt+F)">
+        <svg viewBox="0 0 24 24"><path d="M3 3h14v14H3zM9 9h12v12H9z"/></svg>
+      </button>
+      <button id="bo-minus-back" title="Minus Back (Alt+B)">
+        <svg viewBox="0 0 24 24"><path d="M9 9h12v12H9zM3 3h14v14H3z"/></svg>
+      </button>
+      <button id="bo-exclude" title="Exclude (Alt+X)">
+        <svg viewBox="0 0 24 24"><path d="M3 3h8v8H3zM13 13h8v8h-8zM13 3h8v8h-8zM3 13h8v8H3z"/></svg>
+      </button>
+      <button id="bo-to-path" title="To Path (Alt+P)">
+        <svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/></svg>
+      </button>
+    </div>
+    <script>
+    (function(){
+      if (window.__BOOLEAN_TOP__) return; window.__BOOLEAN_TOP__=true;
+
+      function findOpButton(text){
+        text = (text||'').toLowerCase();
+        var candidates = Array.from(document.querySelectorAll('button, [role="button"]'));
+        return candidates.find(function(b){
+          var t = (b.innerText || b.textContent || '').trim().toLowerCase();
+          return t === text || t.includes(text);
+        });
+      }
+      function forward(id, label){
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('click', function(){
+          var btn = findOpButton(label);
+          if (btn) { btn.click(); }
+        });
+      }
+
+      forward('bo-unite', 'unite');
+      forward('bo-intersect', 'intersect');
+      forward('bo-minus-front', 'minus front');
+      forward('bo-minus-back', 'minus back');
+      forward('bo-exclude', 'exclude');
+      forward('bo-to-path', 'to path');
+
+      // Shortcuts
+      window.addEventListener('keydown', function(e){
+        if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+        var k = (e.key||'').toLowerCase();
+        var map = { u:'bo-unite', i:'bo-intersect', f:'bo-minus-front', b:'bo-minus-back', x:'bo-exclude', p:'bo-to-path' };
+        var id = map[k]; if (!id) return;
+        var el = document.getElementById(id); if (!el) return;
+        e.preventDefault(); el.click();
+      }, {passive:false});
+
+      // Active blink state
+      function blinkActive(btn){
+        if(!btn) return;
+        btn.classList.add('is-active');
+        setTimeout(function(){ btn.classList.remove('is-active'); }, 900);
+      }
+      ['bo-unite','bo-intersect','bo-minus-front','bo-minus-back','bo-exclude','bo-to-path']
+        .forEach(function(id){
+          var el=document.getElementById(id);
+          if(!el) return;
+          el.addEventListener('click', function(){ blinkActive(el); });
+        });
+
+      // Tooltips with Tippy.js
+      (function initTippy(){
+        var linkPopper=document.createElement('script');
+        linkPopper.src='https://unpkg.com/@popperjs/core@2/dist/umd/popper.min.js';
+        var linkTippy=document.createElement('script');
+        linkTippy.src='https://unpkg.com/tippy.js@6/dist/tippy-bundle.umd.min.js';
+        var css=document.createElement('link'); css.rel='stylesheet';
+        css.href='https://unpkg.com/tippy.js@6/animations/scale-subtle.css';
+        document.head.appendChild(css);
+        linkPopper.onload=function(){ document.head.appendChild(linkTippy); };
+        linkTippy.onload=function(){
+          if (window.tippy){
+            tippy('#boolean-ops button',{ animation:'scale-subtle', theme:'light-border', placement:'bottom', delay:[80,0] });
+          }
+        };
+        document.head.appendChild(linkPopper);
+      })();
+    })();
+    </script>
+    <!-- === /PATCH Boolean Ops === -->
+
 <!-- Pathfinder auxiliary canvas for Paper.js -->
 <canvas id="pf-canvas" width="1" height="1" style="display:none"></canvas>
 
