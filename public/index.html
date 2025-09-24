@@ -3915,6 +3915,80 @@
     }, {passive:false});
   })();
   </script>
+  <!-- Safari Kit • PATCH 1: Round Sign Base -->
+  <style>
+    #safari-tools{position:fixed;right:16px;top:86px;z-index:99990;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.15);padding:10px;min-width:220px}
+    #safari-tools h4{margin:0 0 6px;font:700 13px system-ui;color:#111827}
+    #safari-tools .row{display:flex;gap:6px;align-items:center;margin:6px 0}
+    #safari-tools button{border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:6px 10px;cursor:pointer}
+    #safari-tools input[type="range"]{width:120px}
+    #safari-tools .small{font:12px system-ui;color:#374151}
+  </style>
+  <div id="safari-tools">
+    <h4>Safari Round Sign</h4>
+    <div class="row"><button id="sf-add-base">➕ Add Base</button><span class="small">cerc fundal</span></div>
+    <div class="row">
+      <label class="small">Ø (mm)</label>
+      <input id="sf-dia" type="range" min="200" max="700" step="5" value="450"/>
+      <span id="sf-dia-val" class="small">450</span>
+    </div>
+    <div class="row">
+      <label class="small">Wood</label>
+      <input id="sf-wood" type="color" value="#6e4a2f" title="culoare lemn"/>
+    </div>
+  </div>
+  <script>
+  (function(){
+    if (window.__SAFARI_BASE__) return; window.__SAFARI_BASE__=true;
+    function mainSVG(){
+      var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
+      a.sort(function(A,B){
+        function ar(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
+          if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3]; var r=x.getBoundingClientRect(); return r.width*r.height||0}
+        return ar(B)-ar(A)});
+      return a[0];
+    }
+    function ensureSafariLayer(){
+      var sv=mainSVG(); if(!sv) return null;
+      var g=sv.querySelector('g.lcs-safari'); if(g) return g;
+      g=document.createElementNS('http://www.w3.org/2000/svg','g');
+      g.setAttribute('class','lcs-safari'); sv.appendChild(g); return g;
+    }
+    function viewBoxInfo(){
+      var sv=mainSVG(); if(!sv) return null;
+      var vb=(sv.getAttribute('viewBox')||'').split(/\s+/).map(Number);
+      if (vb.length===4&&vb.every(isFinite)) return {x:vb[0],y:vb[1],w:vb[2],h:vb[3],cx:vb[0]+vb[2]/2,cy:vb[1]+vb[3]/2};
+      var r=sv.getBoundingClientRect(); return {x:0,y:0,w:r.width,h:r.height,cx:r.width/2,cy:r.height/2};
+    }
+    function pxPerMM(){ return 96/25.4; } // 96 px = 1in = 25.4mm
+    function addOrUpdateBase(){
+      var sv=mainSVG(), lay=ensureSafariLayer(), vb=viewBoxInfo(); if(!sv||!lay||!vb) return;
+      var diaMM = Number(document.getElementById('sf-dia').value)||450;
+      var color = document.getElementById('sf-wood').value||'#6e4a2f';
+      var rPx = Math.max(10, diaMM*pxPerMM()/2);
+      var c = lay.querySelector('#safari-base');
+      if (!c){
+        c = document.createElementNS('http://www.w3.org/2000/svg','circle');
+        c.setAttribute('id','safari-base');
+        c.setAttribute('class','safari base');
+        lay.insertBefore(c, lay.firstChild);
+      }
+      c.setAttribute('cx', vb.cx);
+      c.setAttribute('cy', vb.cy);
+      c.setAttribute('r',  rPx);
+      c.setAttribute('fill', color);
+      c.setAttribute('stroke', '#1f2937');
+      c.setAttribute('stroke-width','8');
+      c.setAttribute('data-export','true');
+      try{ window.LCS && window.LCS.history && window.LCS.history.push('safari-base'); }catch(_){}}
+    var btn=document.getElementById('sf-add-base');
+    btn && (btn.onclick=addOrUpdateBase);
+    var rng=document.getElementById('sf-dia'), out=document.getElementById('sf-dia-val');
+    rng && (rng.oninput = function(){ out.textContent=this.value; addOrUpdateBase(); });
+    var clr=document.getElementById('sf-wood'); clr && (clr.oninput = addOrUpdateBase);
+  })();
+  </script>
+
   <!-- Layers Lite (eye/lock) -->
   <style>
     #lcs-layers-lite{position:fixed;right:16px;top:60px;z-index:99988;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.15);min-width:180px;max-height:40vh;overflow:auto}
