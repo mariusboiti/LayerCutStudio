@@ -4041,7 +4041,63 @@
 })();
 </script>
 
-<!-- LASER OPS • PATCH 1: Color map + Preflight (din main) -->
+<!-- Safari Kit • PATCH 4: Name Preset (BLOCK + Script) -->
+<style>
+  #safari-names{
+    position:fixed;right:16px;top:468px;z-index:99990;background:#fff;
+    border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.15);
+    padding:10px;min-width:220px
+  }
+  #safari-names button{border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:6px 10px;cursor:pointer}
+</style>
+<div id="safari-names" data-export="false">
+  <button id="sf-preset-names">🖊️ Name Preset…</button>
+</div>
+<script>
+(function(){
+  if (window.__SAFARI_NAMES__) return; window.__SAFARI_NAMES__=true;
+
+  function setInput(selector, val){
+    var el=document.querySelector(selector); if(!el) return false;
+    el.value=val;
+    el.dispatchEvent(new Event('input',{bubbles:true}));
+    el.dispatchEvent(new Event('change',{bubbles:true}));
+    return true;
+  }
+  function chooseFont(name){
+    // caută în primul <select> (ajustează selectorul dacă ai un alt ID pentru font)
+    var sel=document.querySelector('select'); if(!sel) return;
+    var opt=[].slice.call(sel.options).find(function(o){return (o.textContent||'').toLowerCase().includes(name)});
+    if (opt){ sel.value=opt.value; sel.dispatchEvent(new Event('change',{bubbles:true})); }
+  }
+  function preset(){
+    var first = prompt('First name (UPPERCASE)', 'HUDSON') || '';
+    var middle = prompt('Middle name (Script)', 'James') || '';
+
+    // setează linia 1 (uppercase)
+    setInput('input[placeholder^="Text"]', first.toUpperCase());
+
+    // setează linia 2 (script) – presupunem al doilea input text din UI
+    var inputs=document.querySelectorAll('input[type="text"]');
+    if (inputs[1]){
+      inputs[1].value = middle;
+      inputs[1].dispatchEvent(new Event('input',{bubbles:true}));
+      inputs[1].dispatchEvent(new Event('change',{bubbles:true}));
+    }
+
+    // alege fonturi (ex.: „demo” ca BLOCK). Schimbă subșirul după fonturile tale.
+    chooseFont('demo');
+
+    try{
+      window.LCS && window.LCS.history && window.LCS.history.push('names-preset');
+    }catch(_){}
+  }
+  var b=document.getElementById('sf-preset-names');
+  if (b) b.onclick=preset;
+})();
+</script>
+
+<!-- LASER OPS • PATCH 1: Color map + Preflight -->
 <style>
   #laser-ops{position:fixed;right:16px;top:86px;z-index:99993;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.15);padding:10px;min-width:260px}
   #laser-ops h4{margin:0 0 6px;font:700 13px system-ui;color:#111827}
@@ -4162,82 +4218,6 @@
     var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
     a.sort(function(A,B){
       function ar(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
-        if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3]; var r=x.getBoundingClientRect(); return r.width*r.height||0}
-      return ar(B)-ar(A)});
-    return a[0];
-  }
-  function getSelectionDom(){
-    var root=mainSVG()||document;
-    var els=[].slice.call(root.querySelectorAll('[data-selected="1"],[aria-selected="true"],.selected'));
-    try{
-      if (!els.length && typeof window.getSnapshot==='function'){
-        var s=window.getSnapshot()||{}, ids=Array.isArray(s.selection)?s.selection:(s.selection?[s.selection]:[]);
-        ids.forEach(function(id){
-          var sel=document.querySelector('[data-lcs-id="'+id+'"],[data-id="'+id+'"],#'+(window.CSS&&CSS.escape?CSS.escape(id):id));
-          if (sel) els.push(sel);
-        });
-      }
-    }catch(_){}
-    els = els.filter(function(n){ return !!n.ownerSVGElement || n.tagName==='svg'; });
-    return els;
-  }
-  function asSVGString(nodes){
-    var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
-    svg.setAttribute('xmlns','http://www.w3.org/2000/svg');
-    nodes.forEach(function(n){ svg.appendChild(n.cloneNode(true)); });
-    return new XMLSerializer().serializeToString(svg);
-  }
-  function importToPaper(nodes){
-    if (!window.paper) return [];
-    var pfCanvas=document.getElementById('pf-canvas');
-    try{ if(!paper.project||!paper.project.view) paper.setup(pfCanvas); }catch(_){}
-    paper.project.clear();
-    var svgString=asSVGString(nodes);
-    var imported=paper.project.importSVG(svgString,{expandShapes:true,insert:true});
-    var items=[];
-    imported.children && imported.children.forEach(function(ch){ ch.flatten && ch.flatten(0.1); });
-    imported.descendants && imported.descendants.forEach(function(it){ if(it.className==='Path'||it.className==='CompoundPath'){ items.push(it); } });
-    return items;
-  }
-  function exportPaperToElement(item, styleFrom){
-    if(!window.paper||!item) return null;
-    var str=item.exportSVG({asString:true,precision:2});
-    var doc=new DOMParser().parseFromString(str,'image/svg+xml');
-    var el=doc.documentElement;
-    if(styleFrom){
-      ['fill','stroke','stroke-width','stroke-linejoin','stroke-linecap'].forEach(function(k){
-        var v=styleFrom.getAttribute(k); if(v!=null) el.setAttribute(k,v);
-      });
-    }
-    return document.importNode(el,true);
-  }
-  function pushHistory(tag){ try{ window.LCS && window.LCS.history && window.LCS.history.push(tag||'pathfinder'); }catch(_){ } }
-
-  window.__PF__={ mainSVG, getSelectionDom, asSVGString, importToPaper, exportPaperToElement, pushHistory };
-})();
-</script>
-
-<!-- Pathfinder (Paper.js) – UI (lăsat ca în main) -->
-<style>
-  #lcs-pathfinder{position:fixed;right:16px;top:386px;z-index:99990;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.15);padding:10px;min-width:260px}
-  #lcs-pathfinder .row{display:flex;gap:6px;align-items:center;margin:6px 0;flex-wrap:wrap}
-  #lcs-pathfinder button{border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:6px 10px;cursor:pointer}
-  #lcs-pathfinder small{display:block;color:#374151;font:12px system-ui;margin-top:4px}
-  #pf-canvas{position:fixed;left:-9999px;top:-9999px;width:1px;height:1px}
-</style>
-<div id="lcs-pathfinder" data-export="false">
-  <div class="row">
-    <button id="pf-unite" title="Alt+U">Unite</button>
-    <button id="pf-intersect" title="Alt+I">Intersect</button>
-    <button id="pf-minus-front" title="Alt+F">Minus Front</button>
-    <button id="pf-minus-back" title="Alt+B">Minus Back</button>
-    <button id="pf-exclude" title="Alt+X">Exclude</button>
-    <button id="pf-to-path" title="Convert to Path">To Path</button>
-  </div>
-  <small>Selectează 2+ forme (sau 1 pentru “To Path”). Shortcut-uri: Alt+U/I/F/B/X.</small>
-</div>
-<canvas id="pf-canvas" width="2" height="2"></canvas>
-<!-- Scriptul operațiilor Pathfinder rămâne cel din main -->
 
 </body>
 </html>
