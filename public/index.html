@@ -3949,7 +3949,99 @@
     }, {passive:false});
   })();
   </script>
-<!-- LASER OPS • PATCH 1: Color map + Preflight -->
+<!-- Safari Kit • PATCH 3: Giraffe sticker -->
+<style>
+  #safari-animals{
+    position:fixed;right:16px;top:368px;z-index:99990;background:#fff;
+    border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.15);
+    padding:10px;min-width:220px
+  }
+  #safari-animals button{
+    border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:6px 10px;cursor:pointer
+  }
+</style>
+<div id="safari-animals" data-export="false">
+  <button id="sf-giraffe">🦒 Add Giraffe</button>
+</div>
+<script>
+(function(){
+  if (window.__SAFARI_GIRAFFE__) return; window.__SAFARI_GIRAFFE__=true;
+
+  function mainSVG(){
+    var list=[].slice.call(document.querySelectorAll('svg')); if(!list.length) return null;
+    list.sort(function(a,b){
+      function area(el){
+        var vb=(el.getAttribute('viewBox')||'').split(/\s+/).map(Number);
+        if(vb.length===4&&vb.every(isFinite)) return vb[2]*vb[3];
+        var r=el.getBoundingClientRect(); return r.width*r.height||0;
+      }
+      return area(b)-area(a);
+    });
+    return list[0];
+  }
+  function safariLayer(){
+    var svg=mainSVG(); if(!svg) return null;
+    var g=svg.querySelector('g.lcs-safari');
+    if(!g){ g=document.createElementNS('http://www.w3.org/2000/svg','g'); g.setAttribute('class','lcs-safari'); svg.appendChild(g); }
+    return g;
+  }
+  function vbCenter(){
+    var svg=mainSVG(); if(!svg) return {cx:0,cy:0};
+    var b=(svg.getAttribute('viewBox')||'').split(/\s+/).map(Number);
+    if(b.length===4&&b.every(isFinite)) return {cx:b[0]+b[2]/2,cy:b[1]+b[3]/2};
+    var r=svg.getBoundingClientRect(); return {cx:r.width/2,cy:r.height/2};
+  }
+  function addGiraffe(){
+    var target=safariLayer(), c=vbCenter(); if(!target) return;
+    var grp=document.createElementNS('http://www.w3.org/2000/svg','g');
+    grp.setAttribute('class','safari giraffe selected');
+    grp.setAttribute('data-selected','1');
+    grp.setAttribute('transform','translate('+(c.cx-180)+','+(c.cy+40)+')');
+    grp.setAttribute('data-export','true');
+    grp.setAttribute('tabindex','0');
+
+    var neck=document.createElementNS('http://www.w3.org/2000/svg','rect');
+    neck.setAttribute('x','50'); neck.setAttribute('y','70');
+    neck.setAttribute('rx','14'); neck.setAttribute('ry','14');
+    neck.setAttribute('width','38'); neck.setAttribute('height','110');
+    neck.setAttribute('fill','#ffd79e'); neck.setAttribute('stroke','#7a4f2a'); neck.setAttribute('stroke-width','3');
+    grp.appendChild(neck);
+
+    var head=document.createElementNS('http://www.w3.org/2000/svg','path');
+    head.setAttribute('d','M40,40 C40,15 120,15 120,40 C125,80 115,110 80,120 C45,110 35,80 40,40 Z');
+    head.setAttribute('fill','#ffe6b8'); head.setAttribute('stroke','#7a4f2a'); head.setAttribute('stroke-width','3');
+    grp.appendChild(head);
+
+    var snout=document.createElementNS('http://www.w3.org/2000/svg','ellipse');
+    snout.setAttribute('cx','80'); snout.setAttribute('cy','100'); snout.setAttribute('rx','34'); snout.setAttribute('ry','24');
+    snout.setAttribute('fill','#f3b17f'); grp.appendChild(snout);
+
+    var eye1=document.createElementNS('http://www.w3.org/2000/svg','circle');
+    eye1.setAttribute('cx','65'); eye1.setAttribute('cy','78'); eye1.setAttribute('r','4'); eye1.setAttribute('fill','#2b2b2b'); grp.appendChild(eye1);
+
+    var eye2=document.createElementNS('http://www.w3.org/2000/svg','circle');
+    eye2.setAttribute('cx','95'); eye2.setAttribute('cy','78'); eye2.setAttribute('r','4'); eye2.setAttribute('fill','#2b2b2b'); grp.appendChild(eye2);
+
+    var horn1=document.createElementNS('http://www.w3.org/2000/svg','circle');
+    horn1.setAttribute('cx','60'); horn1.setAttribute('cy','25'); horn1.setAttribute('r','7'); horn1.setAttribute('fill','#d59b6a'); grp.appendChild(horn1);
+
+    var horn2=document.createElementNS('http://www.w3.org/2000/svg','circle');
+    horn2.setAttribute('cx','100'); horn2.setAttribute('cy','25'); horn2.setAttribute('r','7'); horn2.setAttribute('fill','#d59b6a'); grp.appendChild(horn2);
+
+    function spot(x,y,r){
+      var c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+      c.setAttribute('cx',x); c.setAttribute('cy',y); c.setAttribute('r',r); c.setAttribute('fill','#e2a063'); grp.appendChild(c);
+    }
+    spot(64,150,8); spot(84,160,7); spot(70,180,6);
+
+    target.appendChild(grp);
+    try{ window.LCS && window.LCS.history && window.LCS.history.push('giraffe-add'); }catch(_){}
+  }
+  var btn=document.getElementById('sf-giraffe'); if(btn) btn.onclick=addGiraffe;
+})();
+</script>
+
+<!-- LASER OPS • PATCH 1: Color map + Preflight (din main) -->
 <style>
   #laser-ops{position:fixed;right:16px;top:86px;z-index:99993;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.15);padding:10px;min-width:260px}
   #laser-ops h4{margin:0 0 6px;font:700 13px system-ui;color:#111827}
@@ -3985,11 +4077,7 @@
 <script>
 (function(){
   if (window.__LASER_OPS__) return; window.__LASER_OPS__=true;
-  // dacă Paper.js nu e deja încărcat (de la Pathfinder), îl încărcăm acum
-  if (!window.paper){
-    var s=document.createElement('script'); s.src='https://unpkg.com/paper@0.12.17/dist/paper-full.min.js';
-    document.head.appendChild(s);
-  }
+  if (!window.paper){ var s=document.createElement('script'); s.src='https://unpkg.com/paper@0.12.17/dist/paper-full.min.js'; document.head.appendChild(s); }
   var KEY='LCS:opmap';
   function mainSVG(){
     var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
@@ -3999,30 +4087,14 @@
       return ar(B)-ar(A)});
     return a[0];
   }
-  function loadMap(){
-    try{ var j=localStorage.getItem(KEY); if(j) return JSON.parse(j); }catch(_){ }
-    return {cut:'#ff0000', score:'#0000ff', engrave:'#000000'};
-  }
+  function loadMap(){ try{ var j=localStorage.getItem(KEY); if(j) return JSON.parse(j); }catch(_){ } return {cut:'#ff0000',score:'#0000ff',engrave:'#000000'}; }
   function saveMap(map){ try{ localStorage.setItem(KEY, JSON.stringify(map)); }catch(_){ } }
-  function getMapFromUI(){
-    return { cut:document.getElementById('map-cut').value,
-             score:document.getElementById('map-score').value,
-             engrave:document.getElementById('map-engr').value };
-  }
-  function setUIFromMap(m){
-    document.getElementById('map-cut').value=m.cut;
-    document.getElementById('map-score').value=m.score;
-    document.getElementById('map-engr').value=m.engrave;
-  }
-  setUIFromMap(loadMap());
-  ['map-cut','map-score','map-engr'].forEach(function(id){
-    var el=document.getElementById(id); if(el) el.oninput=function(){ saveMap(getMapFromUI()); };
-  });
+  function getMapFromUI(){ return {cut:document.getElementById('map-cut').value,score:document.getElementById('map-score').value,engrave:document.getElementById('map-engr').value}; }
+  function setUIFromMap(m){ document.getElementById('map-cut').value=m.cut; document.getElementById('map-score').value=m.score; document.getElementById('map-engr').value=m.engrave; }
+  setUIFromMap(loadMap()); ['map-cut','map-score','map-engr'].forEach(function(id){ var el=document.getElementById(id); if(el) el.oninput=function(){ saveMap(getMapFromUI()); }; });
 
-  // ===== Preflight =====
-  function collectIssues(svg, map){
-    var issues=[];
-    var cut=map.cut.toLowerCase(), score=map.score.toLowerCase(), engr=map.engrave.toLowerCase();
+  function collectIssues(svg,map){
+    var issues=[], cut=map.cut.toLowerCase(), score=map.score.toLowerCase(), engr=map.engrave.toLowerCase();
     var nodes=[].slice.call(svg.querySelectorAll('*')).filter(function(n){ return n.tagName!=='defs' && !n.closest('[data-export="false"]'); });
     nodes.forEach(function(n){
       var fill=(n.getAttribute('fill')||'').toLowerCase();
@@ -4032,34 +4104,29 @@
         if (fill && fill!=='none') issues.push('Element cu ' + (stroke===cut?'Cut':'Score') + ' are fill ≠ none');
         if (!sw) issues.push('Element ' + (stroke===cut?'Cut':'Score') + ' fără stroke-width (se recomandă 0.1mm)');
       }
-      if (fill===engr){
-        if (stroke && stroke!=='none') issues.push('Engrave are stroke setat (de obicei doar fill)');
-      }
+      if (fill===engr && stroke && stroke!=='none') issues.push('Engrave are stroke setat (de obicei doar fill)');
     });
     if (!nodes.length) issues.push('Nu s-au găsit elemente în SVG.');
     return issues;
   }
-  function fixCommon(svg, map){
+  function fixCommon(svg,map){
     var cut=map.cut.toLowerCase(), score=map.score.toLowerCase(), engr=map.engrave.toLowerCase();
-    var pxPerMM = 96/25.4;
+    var pxPerMM=96/25.4;
     [].slice.call(svg.querySelectorAll('*')).forEach(function(n){
       var fill=(n.getAttribute('fill')||'').toLowerCase();
       var stroke=(n.getAttribute('stroke')||'').toLowerCase();
       if (stroke===cut || stroke===score){
         n.setAttribute('fill','none');
-        n.setAttribute('stroke-width', (0.1*pxPerMM).toFixed(3) + 'mm');
-        n.setAttribute('stroke-linejoin','round');
-        n.setAttribute('stroke-linecap','round');
+        n.setAttribute('stroke-width',(0.1*pxPerMM).toFixed(3)+'mm');
+        n.setAttribute('stroke-linejoin','round'); n.setAttribute('stroke-linecap','round');
       }
-      if (fill===engr){
-        if (stroke && stroke!=='none') n.setAttribute('stroke','none');
-      }
+      if (fill===engr && stroke && stroke!=='none') n.setAttribute('stroke','none');
     });
   }
   function cloneMain(){ var m=mainSVG(); if(!m) return null; return m.cloneNode(true); }
   function showPreflight(list){
     var wrap=document.getElementById('laser-preflight'), ul=document.getElementById('pf-list');
-    ul.innerHTML=''; if (!list.length){ ul.innerHTML='<li>Nicio problemă găsită ✔</li>'; }
+    ul.innerHTML=''; if(!list.length){ ul.innerHTML='<li>Nicio problemă găsită ✔</li>'; }
     list.forEach(function(s){ var li=document.createElement('li'); li.textContent=s; ul.appendChild(li); });
     wrap.style.display='flex';
   }
@@ -4067,32 +4134,26 @@
     var map=getMapFromUI(), clone=cloneMain(); if(!clone){ alert('No SVG to export'); return; }
     var issues=collectIssues(clone,map);
     (function normalizeWH(svg){
-      var vb=(svg.getAttribute('viewBox')||'').trim().split(/\s+/).map(Number); var w=0,h=0;
-      if(vb.length===4&&vb.every(isFinite)){ w=vb[2];h=vb[3]; }
-      if (w>0&&h>0){ svg.setAttribute('width', (w*(25.4/96)).toFixed(3)+'mm'); svg.setAttribute('height',(h*(25.4/96)).toFixed(3)+'mm'); }
+      var vb=(svg.getAttribute('viewBox')||'').trim().split(/\s+/).map(Number), w=0,h=0;
+      if(vb.length===4&&vb.every(isFinite)){ w=vb[2]; h=vb[3]; }
+      if (w>0&&h>0){ svg.setAttribute('width',(w*(25.4/96)).toFixed(3)+'mm'); svg.setAttribute('height',(h*(25.4/96)).toFixed(3)+'mm'); }
     })(clone);
-    fixCommon(clone, map);
-    var xmlHead = '<?xml version="1.0" encoding="UTF-8"?>\n';
-    var s = new XMLSerializer().serializeToString(clone); if (!/xmlns=/.test(s)) s = s.replace('<svg','<svg xmlns="http://www.w3.org/2000/svg"');
-    var blob = new Blob([xmlHead + s], {type:'image/svg+xml'}); var url=URL.createObjectURL(blob);
+    fixCommon(clone,map);
+    var xmlHead='<?xml version="1.0" encoding="UTF-8"?>\n';
+    var s=new XMLSerializer().serializeToString(clone); if(!/xmlns=/.test(s)) s=s.replace('<svg','<svg xmlns="http://www.w3.org/2000/svg"');
+    var blob=new Blob([xmlHead+s],{type:'image/svg+xml'}), url=URL.createObjectURL(blob);
     var a=document.createElement('a'); a.href=url; a.download='layercut-export.svg'; document.body.appendChild(a); a.click();
     setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); },0);
     showPreflight(issues);
   }
-  document.getElementById('btn-preflight').onclick = function(){
-    var map=getMapFromUI(), clone=cloneMain(); if(!clone){ alert('No SVG'); return; }
-    showPreflight(collectIssues(clone,map));
-  };
-  document.getElementById('btn-preflight-export').onclick = exportSVGWithMap;
-  document.getElementById('pf-close').onclick = function(){ document.getElementById('laser-preflight').style.display='none'; };
-  document.getElementById('pf-fix').onclick = function(){
-    var map=getMapFromUI(), clone=cloneMain(); if(!clone){ alert('No SVG'); return; }
-    fixCommon(clone,map); showPreflight(collectIssues(clone,map));
-  };
+  document.getElementById('btn-preflight').onclick=function(){ var map=getMapFromUI(), clone=cloneMain(); if(!clone){ alert('No SVG'); return; } showPreflight(collectIssues(clone,map)); };
+  document.getElementById('btn-preflight-export').onclick=exportSVGWithMap;
+  document.getElementById('pf-close').onclick=function(){ document.getElementById('laser-preflight').style.display='none'; };
+  document.getElementById('pf-fix').onclick=function(){ var map=getMapFromUI(), clone=cloneMain(); if(!clone){ alert('No SVG'); return; } fixCommon(clone,map); showPreflight(collectIssues(clone,map)); };
 })();
 </script>
 
-<!-- Helpers pentru Paper.js (non-invaziv, fără dublu-setup) — păstrat din main -->
+<!-- Helpers pentru Paper.js (non-invaziv, fără dublu-setup) — păstrate din main -->
 <script>
 (function(){
   if (window.__PF_HELPERS__) return; window.__PF_HELPERS__=true;
@@ -4121,68 +4182,62 @@
     return els;
   }
   function asSVGString(nodes){
-    var svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+    var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
     svg.setAttribute('xmlns','http://www.w3.org/2000/svg');
     nodes.forEach(function(n){ svg.appendChild(n.cloneNode(true)); });
     return new XMLSerializer().serializeToString(svg);
   }
   function importToPaper(nodes){
     if (!window.paper) return [];
-    var pfCanvas = document.getElementById('pf-canvas');
-    try{
-      if (!paper.project || !paper.project.view) paper.setup(pfCanvas);
-    }catch(_){}
+    var pfCanvas=document.getElementById('pf-canvas');
+    try{ if(!paper.project||!paper.project.view) paper.setup(pfCanvas); }catch(_){}
     paper.project.clear();
-    var svgString = asSVGString(nodes);
-    var imported = paper.project.importSVG(svgString, { expandShapes: true, insert: true });
+    var svgString=asSVGString(nodes);
+    var imported=paper.project.importSVG(svgString,{expandShapes:true,insert:true});
     var items=[];
     imported.children && imported.children.forEach(function(ch){ ch.flatten && ch.flatten(0.1); });
-    imported.descendants && imported.descendants.forEach(function(it){
-      if (it.className==='Path' || it.className==='CompoundPath'){ items.push(it); }
-    });
+    imported.descendants && imported.descendants.forEach(function(it){ if(it.className==='Path'||it.className==='CompoundPath'){ items.push(it); } });
     return items;
   }
   function exportPaperToElement(item, styleFrom){
-    if (!window.paper || !item) return null;
-    var str = item.exportSVG({ asString:true, precision:2 });
-    var doc = new DOMParser().parseFromString(str, 'image/svg+xml');
-    var el = doc.documentElement;
-    if (styleFrom){
+    if(!window.paper||!item) return null;
+    var str=item.exportSVG({asString:true,precision:2});
+    var doc=new DOMParser().parseFromString(str,'image/svg+xml');
+    var el=doc.documentElement;
+    if(styleFrom){
       ['fill','stroke','stroke-width','stroke-linejoin','stroke-linecap'].forEach(function(k){
-        var v=styleFrom.getAttribute(k); if (v!=null) el.setAttribute(k,v);
+        var v=styleFrom.getAttribute(k); if(v!=null) el.setAttribute(k,v);
       });
     }
-    return document.importNode(el, true);
+    return document.importNode(el,true);
   }
   function pushHistory(tag){ try{ window.LCS && window.LCS.history && window.LCS.history.push(tag||'pathfinder'); }catch(_){ } }
 
-  window.__PF__ = { mainSVG, getSelectionDom, asSVGString, importToPaper, exportPaperToElement, pushHistory };
+  window.__PF__={ mainSVG, getSelectionDom, asSVGString, importToPaper, exportPaperToElement, pushHistory };
 })();
 </script>
 
-<!-- Pathfinder (Paper.js) – UI (păstrat din main) -->
+<!-- Pathfinder (Paper.js) – UI (lăsat ca în main) -->
 <style>
   #lcs-pathfinder{position:fixed;right:16px;top:386px;z-index:99990;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.15);padding:10px;min-width:260px}
   #lcs-pathfinder .row{display:flex;gap:6px;align-items:center;margin:6px 0;flex-wrap:wrap}
   #lcs-pathfinder button{border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:6px 10px;cursor:pointer}
   #lcs-pathfinder small{display:block;color:#374151;font:12px system-ui;margin-top:4px}
-  /* canvas ascuns pentru Paper.js */
   #pf-canvas{position:fixed;left:-9999px;top:-9999px;width:1px;height:1px}
 </style>
 <div id="lcs-pathfinder" data-export="false">
   <div class="row">
-    <button id="pf-unite"        title="Alt+U">Unite</button>
-    <button id="pf-intersect"    title="Alt+I">Intersect</button>
-    <button id="pf-minus-front"  title="Alt+F">Minus Front</button>
-    <button id="pf-minus-back"   title="Alt+B">Minus Back</button>
-    <button id="pf-exclude"      title="Alt+X">Exclude</button>
-    <button id="pf-to-path"      title="Convert to Path">To Path</button>
+    <button id="pf-unite" title="Alt+U">Unite</button>
+    <button id="pf-intersect" title="Alt+I">Intersect</button>
+    <button id="pf-minus-front" title="Alt+F">Minus Front</button>
+    <button id="pf-minus-back" title="Alt+B">Minus Back</button>
+    <button id="pf-exclude" title="Alt+X">Exclude</button>
+    <button id="pf-to-path" title="Convert to Path">To Path</button>
   </div>
   <small>Selectează 2+ forme (sau 1 pentru “To Path”). Shortcut-uri: Alt+U/I/F/B/X.</small>
 </div>
 <canvas id="pf-canvas" width="2" height="2"></canvas>
-
-<!-- Scriptul lung Pathfinder rămâne cel din main (operațiile sunt deja implementate acolo) -->
+<!-- Scriptul operațiilor Pathfinder rămâne cel din main -->
 
 </body>
 </html>
