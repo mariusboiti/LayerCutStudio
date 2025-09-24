@@ -1,6 +1,10 @@
 ﻿<!DOCTYPE html>
 <html lang="ro">
 <head>
+  <!-- PATCH: remove Pathfinder panel permanently -->
+  <style id="kill-pathfinder-css">
+    #lcs-pathfinder { display:none !important; visibility:hidden !important; }
+  </style>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>LayerCut Studio — LaserFilesPro</title>
@@ -202,6 +206,28 @@
    })();
  </script>
 <body>
+  <script id="kill-pathfinder-js">
+    (function(){
+      if (window.__KILL_PATHFINDER__) return; window.__KILL_PATHFINDER__ = true;
+      function nuke(){
+        var el = document.getElementById('lcs-pathfinder');
+        if (el && el.parentNode) {
+          try {
+            el.remove();
+          } catch (_) {
+            el.parentNode.removeChild(el);
+          }
+        }
+      }
+      // 1) Șterge acum (dacă există static)
+      nuke();
+      // 2) Previne reapariția (dacă e injectat dinamic)
+      var mo = new MutationObserver(nuke);
+      mo.observe(document.body, { childList: true, subtree: true });
+      // 3) Siguranță: repetă după load
+      window.addEventListener('load', nuke, { once: true });
+    })();
+  </script>
 
     <!-- === PATCH: Sidebar lipit stânga + Canvas pe restul (stabil, limitat la #app) === -->
     <style id="lcs-layout-flex-css">
