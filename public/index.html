@@ -3093,5 +3093,52 @@
     }, {passive:false});
   })();
   </script>
+  <!-- Layers Lite (eye/lock) -->
+  <style>
+    #lcs-layers-lite{position:fixed;right:16px;top:60px;z-index:99988;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.15);min-width:180px;max-height:40vh;overflow:auto}
+    #lcs-layers-lite .row{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid #f3f4f6}
+    #lcs-layers-lite .row:last-child{border-bottom:0}
+    #lcs-layers-lite .name{flex:1;font:12px/1.2 system-ui;color:#111827}
+    #lcs-layers-lite button{border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:4px 6px;cursor:pointer;font:600 12px/1 system-ui}
+  </style>
+  <div id="lcs-layers-lite"></div>
+  <script>
+  (function(){
+    if (window.__LCS_LAYERS_LITE__) return; window.__LCS_LAYERS_LITE__=true;
+    var host=document.getElementById('lcs-layers-lite');
+    function s(){ try{ return (window.getSnapshot&&window.getSnapshot())||{} }catch(_){ return {} } }
+    function apply(x){ try{ window.applySnapshot&&window.applySnapshot(x) }catch(_){ } }
+    function render(){
+      host.innerHTML='';
+      var snap=s(); var arr = Array.isArray(snap.layers) ? snap.layers.slice() : [];
+      if (!arr.length){ host.innerHTML='<div style="padding:8px 10px;font:12px system-ui;color:#6b7280">No layers</div>'; return; }
+      arr.forEach(function(ly,idx){
+        var row=document.createElement('div'); row.className='row';
+        var n=document.createElement('div'); n.className='name'; n.textContent = ly.name || ('Layer '+(idx+1));
+        var eye=document.createElement('button'); eye.textContent = (ly.hidden?'👁️‍🗨️':'👁️'); eye.title='Toggle visibility';
+        var lock=document.createElement('button'); lock.textContent = (ly.locked?'🔒':'🔓'); lock.title='Toggle lock';
+        eye.onclick=function(){
+          var ss=s(); if(Array.isArray(ss.layers) && ss.layers[idx]){ ss.layers[idx].hidden = !ss.layers[idx].hidden; apply(ss); try{ window.LCS && window.LCS.history && window.LCS.history.push('layer-visibility'); }catch(_){ } }
+          else { // fallback DOM by data-layer
+            var name = ly.name || ('layer'+idx);
+            document.querySelectorAll('[data-layer="'+name+'"]').forEach(function(el){ el.style.display = (el.style.display==='none'?'':'none'); });
+          }
+          render();
+        };
+        lock.onclick=function(){
+          var ss=s(); if(Array.isArray(ss.layers) && ss.layers[idx]){ ss.layers[idx].locked = !ss.layers[idx].locked; apply(ss); try{ window.LCS && window.LCS.history && window.LCS.history.push('layer-lock'); }catch(_){ } }
+          else { // fallback DOM
+            var name = ly.name || ('layer'+idx);
+            document.querySelectorAll('[data-layer="'+name+'"]').forEach(function(el){ el.style.pointerEvents = (el.style.pointerEvents==='none'?'':'none'); el.style.opacity = (el.style.pointerEvents==='none'?0.6:1); });
+          }
+          render();
+        };
+        row.appendChild(n); row.appendChild(eye); row.appendChild(lock); host.appendChild(row);
+      });
+    }
+    if (document.readyState==='loading') document.addEventListener('DOMContentLoaded', render); else render();
+    window.addEventListener('lcs:state-applied', render);
+  })();
+  </script>
 </body>
 </html>
