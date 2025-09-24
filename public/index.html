@@ -2995,6 +2995,87 @@
     window.pushHistory = function(){ try { window.LCS.history.push('manual'); } catch(_){ } };
   })();
   </script>
+  <script>
+  (function(){
+    if (window.__PF_MINUS__) return; window.__PF_MINUS__ = true;
+    var PF = window.__PF__;
+
+    function domOrder(a, b){
+      return (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1;
+    }
+
+    function ensureSelection(min){
+      var nodes = [];
+      if (PF && typeof PF.getSelectionDom === 'function') {
+        try { nodes = PF.getSelectionDom(); } catch(_) {}
+      }
+      if (!Array.isArray(nodes) || nodes.length < (min || 2)) {
+        alert('Selectează minim 2 forme');
+        return null;
+      }
+      return nodes;
+    }
+
+    function replace(nodes, item){
+      if (!nodes || !nodes.length || !item) return;
+      var top = nodes[nodes.length - 1];
+      var parent = nodes[0] && nodes[0].parentNode;
+      if (!PF || typeof PF.exportPaperToElement !== 'function') return;
+      var out = PF.exportPaperToElement(item, top);
+      if (!out) return;
+      out.setAttribute('data-selected', '1');
+      out.classList.add('selected');
+      nodes.forEach(function(n){ try { n.remove(); } catch(_) {} });
+      if (parent) parent.appendChild(out);
+      if (PF && typeof PF.pushHistory === 'function') {
+        PF.pushHistory('pf-op');
+      }
+    }
+
+    function opMinusFront(){
+      var nodes = ensureSelection(2);
+      if (!nodes) return;
+      nodes = nodes.slice().sort(domOrder);
+      if (!PF || typeof PF.importToPaper !== 'function') return;
+      var items = PF.importToPaper(nodes);
+      if (!items || !items.length) return;
+      var base = items[0];
+      for (var i = 1; i < items.length; i++) {
+        base = base.subtract(items[i]);
+      }
+      replace(nodes, base);
+    }
+
+    function opMinusBack(){
+      var nodes = ensureSelection(2);
+      if (!nodes) return;
+      nodes = nodes.slice().sort(domOrder);
+      if (!PF || typeof PF.importToPaper !== 'function') return;
+      var items = PF.importToPaper(nodes);
+      if (!items || !items.length) return;
+      var base = items[items.length - 1];
+      for (var i = 0; i < items.length - 1; i++) {
+        base = base.subtract(items[i]);
+      }
+      replace(nodes, base);
+    }
+
+    function bind(id, fn){
+      var el = document.getElementById(id);
+      if (el) el.onclick = fn;
+    }
+
+    bind('pf-minus-front', opMinusFront);
+    bind('pf-minus-back', opMinusBack);
+
+    window.addEventListener('keydown', function(e){
+      if (!e.altKey) return;
+      var k = (e.key || '').toLowerCase();
+      if (k === 'f') { e.preventDefault(); opMinusFront(); }
+      if (k === 'b') { e.preventDefault(); opMinusBack(); }
+    }, { passive: false });
+  })();
+  </script>
   <!-- Command Palette (Ctrl+K) -->
   <style>
     #lcs-cmdk { display:none; position:fixed; inset:0; z-index:99998; background:rgba(0,0,0,.35); align-items:flex-start; justify-content:center; padding-top:10vh; }
