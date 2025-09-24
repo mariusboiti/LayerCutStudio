@@ -3915,311 +3915,356 @@
     }, {passive:false});
   })();
   </script>
-  <!-- Safari Kit • PATCH 2: Leaves (Monstera + Banana) -->
-  <style>
-    #safari-leaves{position:fixed;right:16px;top:236px;z-index:99990;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.15);padding:10px;min-width:220px}
-    #safari-leaves .row{display:flex;gap:6px;align-items:center;margin:6px 0}
-    #safari-leaves button{border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:6px 10px;cursor:pointer}
-    #safari-leaves .small{font:12px system-ui;color:#374151}
-  </style>
-  <div id="safari-leaves" data-export="false">
-    <div class="row"><button id="sf-leaf-a">🪴 Monstera</button> <input id="sf-leaf-a-color" type="color" value="#64a30b"/></div>
-    <div class="row"><button id="sf-leaf-b">🌿 Banana</button>   <input id="sf-leaf-b-color" type="color" value="#9dd38c"/></div>
-    <div class="row"><span class="small">Click pe frunză → select • Alt+drag pentru rotație.</span></div>
+<!-- Pathfinder (Paper.js) – Unite/Intersect/Subtract/Exclude/To Path -->
+<style>
+  #lcs-pathfinder{position:fixed;right:16px;top:386px;z-index:99990;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.15);padding:10px;min-width:260px}
+  #lcs-pathfinder .row{display:flex;gap:6px;align-items:center;margin:6px 0;flex-wrap:wrap}
+  #lcs-pathfinder button{border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:6px 10px;cursor:pointer}
+  #lcs-pathfinder small{display:block;color:#374151;font:12px system-ui;margin-top:4px}
+  /* canvas ascuns pentru Paper.js */
+  #pf-canvas{position:fixed;left:-9999px;top:-9999px;width:1px;height:1px}
+</style>
+<div id="lcs-pathfinder" data-export="false">
+  <div class="row">
+    <button id="pf-unite"        title="Alt+U">Unite</button>
+    <button id="pf-intersect"    title="Alt+I">Intersect</button>
+    <button id="pf-minus-front"  title="Alt+F">Minus Front</button>
+    <button id="pf-minus-back"   title="Alt+B">Minus Back</button>
+    <button id="pf-exclude"      title="Alt+X">Exclude</button>
+    <button id="pf-to-path"      title="Convert to Path">To Path</button>
   </div>
-  <script>
-  (function(){
-    if (window.__SAFARI_LEAVES__) return; window.__SAFARI_LEAVES__=true;
+  <small>Selectează 2+ forme (sau 1 pentru “To Path”). Shortcut-uri: Alt+U/I/F/B/X.</small>
+</div>
+<canvas id="pf-canvas" width="2" height="2"></canvas>
 
-    function mainSVG(){
-      var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
-      a.sort(function(A,B){
-        function ar(x){
-          var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
-          if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];
-          var r=x.getBoundingClientRect(); return r.width*r.height||0;
-        }
-        return ar(B)-ar(A);
-      });
-      return a[0];
+<script>
+(function(){
+  if (window.__LCS_PATHFINDER__) return;
+  window.__LCS_PATHFINDER__ = true;
+
+  // Asigură UI-ul dacă a fost șters
+  function ensureUI(){
+    var panel=document.getElementById('lcs-pathfinder');
+    if(!panel){
+      var wrap=document.createElement('div');
+      wrap.id='lcs-pathfinder'; wrap.setAttribute('data-export','false');
+      wrap.innerHTML='<div class="row">\
+      <button id="pf-unite" title="Alt+U">Unite</button>\
+      <button id="pf-intersect" title="Alt+I">Intersect</button>\
+      <button id="pf-minus-front" title="Alt+F">Minus Front</button>\
+      <button id="pf-minus-back" title="Alt+B">Minus Back</button>\
+      <button id="pf-exclude" title="Alt+X">Exclude</button>\
+      <button id="pf-to-path" title="Convert to Path">To Path</button>\
+      </div><small>Selectează 2+ forme (sau 1 pentru “To Path”). Shortcut-uri: Alt+U/I/F/B/X.</small>';
+      document.body.appendChild(wrap);
     }
+    var cvs=document.getElementById('pf-canvas');
+    if(!cvs){
+      cvs=document.createElement('canvas'); cvs.id='pf-canvas'; cvs.width=2; cvs.height=2;
+      cvs.style.position='fixed'; cvs.style.left='-9999px'; cvs.style.top='-9999px';
+      document.body.appendChild(cvs);
+    }
+  }
+  ensureUI();
 
-    function safariLayer(){
-      var sv=mainSVG(); if(!sv) return null;
-      var g=sv.querySelector('g.lcs-safari');
-      if(!g){
-        g=document.createElementNS('http://www.w3.org/2000/svg','g');
-        g.setAttribute('class','lcs-safari');
-        sv.appendChild(g);
+  const panel = document.getElementById('lcs-pathfinder');
+  const canvas = document.getElementById('pf-canvas');
+  const paperScope = window.paper;
+
+  if (!paperScope || !canvas || !panel) {
+    console.warn('[Pathfinder] Paper.js sau canvas-ul auxiliar lipsesc.');
+    return;
+  }
+
+  try { paperScope.setup(canvas); } catch (err) {
+    console.error('[Pathfinder] Nu pot inițializa Paper.js:', err);
+    return;
+  }
+
+  const hintEl = panel.querySelector('small');
+  const defaultHint = hintEl ? hintEl.textContent : '';
+  let hintTimer = null;
+
+  function notify(msg, ttl){
+    if (!hintEl) return;
+    if (hintTimer) clearTimeout(hintTimer);
+    hintEl.textContent = msg || defaultHint;
+    if (msg && ttl !== 0){
+      hintTimer = setTimeout(() => { hintEl.textContent = defaultHint; }, ttl || 2400);
+    }
+  }
+
+  const shapeTypes = new Set(['path','compound','shape','group','g','rect','rectangle','circle','ellipse','polygon','polyline']);
+  const childKeys = ['children','items','shapes','objects','elements','nodes','paths','segments','components'];
+
+  function cloneSnapshot(obj){
+    try { if (typeof structuredClone === 'function') return structuredClone(obj); } catch(_){}
+    try { return JSON.parse(JSON.stringify(obj)); } catch(_){ return null; }
+  }
+  function normalizeType(type){ return type ? String(type).toLowerCase() : ''; }
+  function isShapeLike(node, type){
+    if (!node || typeof node !== 'object') return false;
+    if (type && shapeTypes.has(type)) return true;
+    if (typeof node.d === 'string' || typeof node.path === 'string' || typeof node.pathData === 'string') return true;
+    if (typeof node.points === 'string' || Array.isArray(node.points)) return true;
+    if ('width' in node && 'height' in node) return true;
+    if ('r' in node || 'radius' in node || 'rx' in node || 'ry' in node) return true;
+    if (Array.isArray(node.children) || Array.isArray(node.items)) return true;
+    return false;
+  }
+  function getShapeId(node){
+    if (!node || typeof node !== 'object') return null;
+    const id = node.id ?? node.uid ?? node.uuid ?? node.key ?? node.name ?? node.handle ?? null;
+    return id != null ? String(id) : null;
+  }
+  function gatherShapeMap(root){
+    const map = new Map(), visited = new WeakSet();
+    function walk(value, owner, key, depth){
+      if (!value || depth > 8 || typeof value !== 'object' || visited.has(value)) return;
+      visited.add(value);
+      if (Array.isArray(value)) { for (let i=0;i<value.length;i++) walk(value[i], value, i, depth+1); return; }
+      const type = normalizeType(value.type || value.kind || value.shape || value.nodeName || value.elementType);
+      const id = getShapeId(value);
+      if (owner && id && isShapeLike(value, type)) {
+        const order = (typeof value.order === 'number') ? value.order
+          : (typeof value.z === 'number') ? value.z
+          : (typeof value.index === 'number') ? value.index
+          : (Array.isArray(owner) && typeof key === 'number') ? key : 0;
+        map.set(id, { node:value, owner, key, type, order, isArray:Array.isArray(owner) });
       }
-      return g;
+      for (const ck of childKeys){ const ch=value[ck]; if (ch) walk(ch, value, ck, depth+1); }
+      for (const own in value){ if (!Object.prototype.hasOwnProperty.call(value, own)) continue; if (childKeys.includes(own)) continue; const ch=value[own]; if (ch && typeof ch==='object') walk(ch, value, own, depth+1); }
     }
-
-    function vbCenter(){
-      var sv=mainSVG(); if(!sv) return {cx:0,cy:0};
-      var b=(sv.getAttribute('viewBox')||'').split(/\s+/).map(Number);
-      if(b.length===4&&b.every(isFinite)) return {cx:b[0]+b[2]/2,cy:b[1]+b[3]/2};
-      var r=sv.getBoundingClientRect(); return {cx:r.width/2,cy:r.height/2};
+    walk(root, null, null, 0);
+    return map;
+  }
+  function toIdArray(value){
+    if (!value) return [];
+    if (Array.isArray(value)) return value.map(it=>typeof it==='object' ? (it.id ?? it.uid ?? it.uuid ?? it.key ?? it.name ?? null) : it).filter(Boolean).map(String);
+    if (typeof value==='string'||typeof value==='number') return [String(value)];
+    if (typeof value==='object'){
+      const out=[];
+      ['ids','items','selected','idList','nodeIds','shapeIds','handles'].forEach(k=>Array.isArray(value[k])&&out.push(...toIdArray(value[k])));
+      ['id','primary','current'].forEach(k=>value[k]!=null && out.push(String(value[k])));
+      return out;
     }
+    return [];
+  }
+  function gatherSelectionIds(snap){
+    const found=new Set(); const push=(ids)=>ids.forEach(id=>found.add(id));
+    push(toIdArray(snap?.selection)); push(toIdArray(snap?.selectedIds)); push(toIdArray(snap?.selectionIds));
+    if (snap?.selection && typeof snap.selection==='object'){
+      ['ids','items','selected','idList','nodeIds','shapeIds'].forEach(k=>push(toIdArray(snap.selection[k])));
+    }
+    return Array.from(found);
+  }
+  function ensureSelection(selection, keepId){
+    if (!selection) return; const idVal = keepId!=null ? String(keepId) : null;
+    if (Array.isArray(selection)){ selection.length=0; if(idVal) selection.push(idVal); return; }
+    if (typeof selection==='object'){
+      ['ids','items','selected','idList','nodeIds','shapeIds','handles'].forEach(k=>Array.isArray(selection[k])&&(selection[k]=idVal?[idVal]:[]));
+      ['id','primary','current','shapeId'].forEach(k=>k in selection && (selection[k]=idVal));
+    }
+  }
 
-    function addLeaf(kind,color){
-      var g=safariLayer(), c=vbCenter(); if(!g) return;
-      var grp=document.createElementNS('http://www.w3.org/2000/svg','g');
-      grp.setAttribute('class','safari leaf selected');
-      grp.setAttribute('data-selected','1');
-      grp.setAttribute('transform','translate('+(c.cx-120)+','+(c.cy-60)+')');
-      grp.setAttribute('data-export','true');
-      grp.setAttribute('tabindex','0');
-
-      if (kind==='a'){ // Monstera
-        var p=document.createElementNS('http://www.w3.org/2000/svg','path');
-        p.setAttribute('d','M120,20 C60,-10 -10,30 5,90 C25,160 120,170 170,120 C205,85 200,50 170,35 C145,22 125,30 120,20 Z M62,80 c8,-12 18,-22 30,-28 c-12,8 -22,18 -30,28 Z M88,110 c10,-10 20,-18 32,-24 c-12,8 -22,16 -32,24 Z');
-        p.setAttribute('fill', color||'#64a30b');
-        p.setAttribute('stroke','#2a3a12');
-        p.setAttribute('stroke-width','3');
-        grp.appendChild(p);
-      } else {        // Banana
-        var p2=document.createElementNS('http://www.w3.org/2000/svg','path');
-        p2.setAttribute('d','M20,120 C20,40 140,10 190,30 C160,40 130,60 110,85 C90,110 60,140 40,160 C30,150 20,140 20,120 Z');
-        p2.setAttribute('fill', color||'#9dd38c');
-        p2.setAttribute('stroke','#2a3a12');
-        p2.setAttribute('stroke-width','3');
-        grp.appendChild(p2);
+  const SVG_NS='http://www.w3.org/2000/svg';
+  function createSvg(name, attrs){
+    const el=document.createElementNS(SVG_NS,name);
+    if (attrs){ for (const k in attrs){ if(!Object.prototype.hasOwnProperty.call(attrs,k)) continue; const v=attrs[k]; if(v!=null) el.setAttribute(k,String(v)); } }
+    return el;
+  }
+  function parsePoints(points){
+    if (!points) return '';
+    if (typeof points==='string') return points;
+    if (Array.isArray(points)){
+      return points.map(pt=>{
+        if (!pt) return '';
+        if (Array.isArray(pt)) return pt.join(',');
+        const x=pt.x ?? pt[0] ?? 0, y=pt.y ?? pt[1] ?? 0;
+        return x+','+y;
+      }).filter(Boolean).join(' ');
+    }
+    return '';
+  }
+  function getMatrixFrom(shape){
+    if (!shape||typeof shape!=='object') return null;
+    const t = typeof shape.transform==='string' ? shape.transform : null;
+    if (t){ const m=t.match(/matrix\(([^)]+)\)/i); if(m){ const p=m[1].split(/[,\s]+/).map(parseFloat).filter(Number.isFinite); if(p.length===6) return p; } }
+    const mx = Array.isArray(shape.matrix)?shape.matrix:Array.isArray(shape.transformMatrix)?shape.transformMatrix:null;
+    if (mx && mx.length===6){ const v=mx.map(Number); if (v.every(Number.isFinite)) return v; }
+    return null;
+  }
+  function applyMatrixToItem(item, shape){
+    const m=getMatrixFrom(shape);
+    if (m){ try{ item.transform(new paperScope.Matrix(m[0],m[1],m[2],m[3],m[4],m[5])); }catch(err){ console.warn('[Pathfinder] Transform matrix invalid:', err); } }
+  }
+  function shapePathString(shape){
+    const c=[shape?.d,shape?.path,shape?.pathData,shape?.data?.d,shape?.props?.d,shape?.attributes?.d,shape?.vector?.d];
+    for (const x of c){ if (typeof x==='string' && x.trim()) return x; }
+    return '';
+  }
+  function importShape(shape){
+    if (!shape||typeof shape!=='object') return null;
+    const type=normalizeType(shape.type||shape.kind||shape.shape||shape.nodeName||shape.elementType);
+    try{
+      if (type==='group'||type==='g'){
+        const children=[]; const sources=[];
+        childKeys.forEach(k=>Array.isArray(shape[k])&&sources.push(...shape[k]));
+        if (Array.isArray(shape.children)) sources.push(...shape.children);
+        if (!sources.length) return null;
+        for (const ch of sources){ const it=importShape(ch); if (it) children.push(it); }
+        if (!children.length) return null;
+        let merged=children[0];
+        for (let i=1;i<children.length;i++){ const res=merged.unite(children[i]); merged.remove(); children[i].remove(); merged=res; }
+        applyMatrixToItem(merged, shape); return merged;
       }
-
-      g.appendChild(grp);
-      try{ window.LCS && window.LCS.history && window.LCS.history.push('leaf-'+kind); }catch(_){ }
-    }
-
-    var aBtn=document.getElementById('sf-leaf-a');
-    var bBtn=document.getElementById('sf-leaf-b');
-    aBtn && (aBtn.onclick=function(){ addLeaf('a', (document.getElementById('sf-leaf-a-color')||{}).value || '#64a30b'); });
-    bBtn && (bBtn.onclick=function(){ addLeaf('b', (document.getElementById('sf-leaf-b-color')||{}).value || '#9dd38c'); });
-
-    // select + drag + rotație cu Alt
-    (function dragRotate(){
-      var cur=null, start=null;
-      function onDown(e){
-        var g=e.target.closest && e.target.closest('g.safari.leaf'); if(!g) return;
-        cur=g; start={x:e.clientX,y:e.clientY, tr:g.getAttribute('transform')||'translate(0,0) rotate(0)'};
-        document.querySelectorAll('g.safari.leaf').forEach(function(n){ n.removeAttribute('data-selected'); n.classList.remove('selected'); });
-        g.setAttribute('data-selected','1'); g.classList.add('selected');
-        e.preventDefault();
+      const d=shapePathString(shape);
+      if (d){ const el=createSvg('path',{d}); const it=paperScope.project.importSVG(el,{expandShapes:true,insert:true}); applyMatrixToItem(it,shape); return it; }
+      if (type==='rect'||type==='rectangle'){
+        const el=createSvg('rect',{x:shape.x??shape.left??0,y:shape.y??shape.top??0,width:shape.width??shape.w??0,height:shape.height??shape.h??0,rx:shape.rx??shape.ry??shape.radiusX??null,ry:shape.ry??shape.rx??shape.radiusY??null});
+        const it=paperScope.project.importSVG(el,{expandShapes:true,insert:true}); applyMatrixToItem(it,shape); return it;
       }
-      function parse(tr){
-        var t={tx:0,ty:0,rot:0};
-        var m=tr.match(/translate\(([^)]+)\)/i); if(m){ var a=m[1].split(/[, ]+/).map(Number); t.tx=a[0]||0; t.ty=a[1]||0; }
-        var m2=tr.match(/rotate\(([^)]+)\)/i); if(m2){ t.rot=parseFloat(m2[1])||0; }
-        return t;
+      if (type==='circle'){
+        const el=createSvg('circle',{cx:shape.cx??shape.x??0,cy:shape.cy??shape.y??0,r:shape.r??shape.radius??0});
+        const it=paperScope.project.importSVG(el,{expandShapes:true,insert:true}); applyMatrixToItem(it,shape); return it;
       }
-      function onMove(e){
-        if(!cur||!start) return;
-        var dX=e.clientX-start.x, dY=e.clientY-start.y;
-        var t=parse(start.tr);
-        if (e.altKey){ var ang = t.rot + dX*0.4; cur.setAttribute('transform','translate('+t.tx+','+t.ty+') rotate('+ang+')'); }
-        else { cur.setAttribute('transform','translate('+(t.tx+dX)+','+(t.ty+dY)+') rotate('+t.rot+')'); }
+      if (type==='ellipse'){
+        const el=createSvg('ellipse',{cx:shape.cx??shape.x??0,cy:shape.cy??shape.y??0,rx:shape.rx??shape.radiusX??shape.radius??0,ry:shape.ry??shape.radiusY??shape.radius??0});
+        const it=paperScope.project.importSVG(el,{expandShapes:true,insert:true}); applyMatrixToItem(it,shape); return it;
       }
-      function onUp(){
-        if(cur){ try{ window.LCS&&window.LCS.history&&window.LCS.history.push('leaf-move'); }catch(_){ } }
-        cur=null; start=null;
+      if (type==='polygon'||type==='polyline'){
+        const pts=parsePoints(shape.points); if(!pts) return null;
+        const el=createSvg(type==='polyline'?'polyline':'polygon',{points:pts});
+        const it=paperScope.project.importSVG(el,{expandShapes:true,insert:true}); applyMatrixToItem(it,shape); return it;
       }
-      document.addEventListener('mousedown', onDown, true);
-      document.addEventListener('mousemove', onMove, true);
-      document.addEventListener('mouseup', onUp, true);
-    })();
-  })();
-  </script>
+    }catch(err){ console.warn('[Pathfinder] Conversie eșuată pentru formă', shape, err); }
+    return null;
+  }
+  function exportPathData(item){
+    if (!item) return '';
+    try{
+      const exported=item.exportSVG({asString:false,precision:4});
+      function collect(node){
+        if(!node) return '';
+        const nm=(node.nodeName||node.tagName||'').toLowerCase();
+        if (nm==='path'){ const d=node.getAttribute('d'); return d?d:''; }
+        let out=''; const ch=node.childNodes||node.children||[];
+        for (let i=0;i<ch.length;i++) out+=' '+collect(ch[i]);
+        return out.trim();
+      }
+      return collect(exported).trim();
+    }catch(err){ console.warn('[Pathfinder] Export SVG eșuat:', err); return ''; }
+  }
+  function applyPathToShape(shape, pathData){
+    const d=(pathData||'').trim();
+    if ('d' in shape || (!('path' in shape) && !('pathData' in shape))) shape.d=d;
+    if ('path' in shape) shape.path=d;
+    if ('pathData' in shape) shape.pathData=d;
+    if (shape.props && 'd' in shape.props) shape.props.d=d;
+    if (shape.data && 'd' in shape.data) shape.data.d=d;
+    if (shape.attributes && 'd' in shape.attributes) shape.attributes.d=d;
+    if (shape.vector && typeof shape.vector==='object') shape.vector.d=d;
+    shape.type='path'; if ('kind' in shape) shape.kind='path';
+    if (typeof shape.shape==='string') shape.shape='path';
+    if ('nodeName' in shape) shape.nodeName='path';
+    if ('elementType' in shape) shape.elementType='path';
+    delete shape.width; delete shape.height; delete shape.rx; delete shape.ry;
+    delete shape.cx; delete shape.cy; delete shape.r; delete shape.points;
+    delete shape.radius; delete shape.radiusX; delete shape.radiusY;
+  }
+  function combine(base,next,method){
+    if (!base||!next) return base;
+    const fn=base[method]; if (typeof fn!=='function') return base;
+    const result=fn.call(base,next);
+    if (result){ base.remove(); next.remove(); return result; }
+    return base;
+  }
+  function prepareContext(minCount){
+    const source = (typeof window.getSnapshot==='function') ? window.getSnapshot()
+      : (window.LCS && typeof window.LCS.state==='function') ? window.LCS.state()
+      : null;
+    if (!source){ notify('Nu există snapshot disponibil.'); return null; }
+    const snap=cloneSnapshot(source); if(!snap){ notify('Snapshot invalid.'); return null; }
+    const selectedIds=gatherSelectionIds(snap);
+    if (!selectedIds.length || selectedIds.length<minCount){ notify(minCount>1?'Selectează cel puțin două forme.':'Selectează o formă.'); return null; }
+    const shapeMap=gatherShapeMap(snap);
+    const seen=new Set(), refs=[];
+    for (const rawId of selectedIds){ const id=String(rawId); if(seen.has(id)) continue; const ref=shapeMap.get(id); if(ref){ refs.push(ref); seen.add(id); } }
+    if (refs.length<minCount){ notify('Selecția nu conține suficiente forme vectoriale.'); return null; }
+    refs.sort((a,b)=>(a.order??0)-(b.order??0));
+    return { snap, refs, selectionIds:selectedIds };
+  }
+  function applyAndPush(snap, reason){
+    const label=`pathfinder-${reason}`;
+    try{
+      if (typeof window.applySnapshot==='function'){ window.applySnapshot(snap); }
+      else if (window.__LCS_INTERNAL__ && window.__LCS_INTERNAL__.appState){
+        Object.assign(window.__LCS_INTERNAL__.appState, snap);
+        window.dispatchEvent(new CustomEvent('lcs:state-applied',{detail:{kind:label,snapshot:snap}}));
+      }
+    }catch(err){ console.error('[Pathfinder] applySnapshot a eșuat:', err); }
+    if (typeof window.pushHistoryCoalesced==='function') window.pushHistoryCoalesced(label,200);
+    else if (typeof window.pushHistory==='function') window.pushHistory(label);
+    else if (window.LCS && typeof window.LCS.push==='function') window.LCS.push(label);
+  }
+  function perform(mode){
+    const minCount = mode==='to-path' ? 1 : 2;
+    const ctx=prepareContext(minCount); if(!ctx) return;
+    const {snap, refs}=ctx;
+    const items=refs.map(ref=>({ref, item:importShape(ref.node)})).filter(e=>e.item);
+    if (items.length<minCount){ paperScope.project.clear(); notify('Formele selectate nu pot fi convertite.'); return; }
 
-  <!-- Safari Kit • PATCH 1: Round Sign Base -->
-  <style>
-    #safari-tools{position:fixed;right:16px;top:86px;z-index:99990;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.15);padding:10px;min-width:220px}
-    #safari-tools h4{margin:0 0 6px;font:700 13px system-ui;color:#111827}
-    #safari-tools .row{display:flex;gap:6px;align-items:center;margin:6px 0}
-    #safari-tools button{border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:6px 10px;cursor:pointer}
-    #safari-tools input[type="range"]{width:120px}
-    #safari-tools .small{font:12px system-ui;color:#374151}
-  </style>
-  <div id="safari-tools" data-export="false">
-    <h4>Safari Round Sign</h4>
-    <div class="row"><button id="sf-add-base">➕ Add Base</button><span class="small">cerc fundal</span></div>
-    <div class="row">
-      <label class="small">Ø (mm)</label>
-      <input id="sf-dia" type="range" min="200" max="700" step="5" value="450"/>
-      <span id="sf-dia-val" class="small">450</span>
-    </div>
-    <div class="row">
-      <label class="small">Wood</label>
-      <input id="sf-wood" type="color" value="#6e4a2f" title="culoare lemn"/>
-    </div>
-  </div>
-  <script>
-  (function(){
-    if (window.__SAFARI_BASE__) return; window.__SAFARI_BASE__=true;
-    function mainSVG(){
-      var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
-      a.sort(function(A,B){
-        function ar(x){
-          var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
-          if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];
-          var r=x.getBoundingClientRect(); return r.width*r.height||0;
-        }
-        return ar(B)-ar(A);
-      });
-      return a[0];
+    if (mode==='to-path'){
+      let changed=false;
+      for (const entry of items){ const d=exportPathData(entry.item); if(d){ applyPathToShape(entry.ref.node,d); changed=true; } }
+      paperScope.project.clear();
+      if (!changed){ notify('Nu s-au găsit forme de convertit.'); return; }
+      applyAndPush(snap, mode); notify('Forme convertite la path.', 2000); return;
     }
-    function ensureSafariLayer(){
-      var sv=mainSVG(); if(!sv) return null;
-      var g=sv.querySelector('g.lcs-safari'); if(g) return g;
-      g=document.createElementNS('http://www.w3.org/2000/svg','g');
-      g.setAttribute('class','lcs-safari'); sv.appendChild(g); return g;
-    }
-    function viewBoxInfo(){
-      var sv=mainSVG(); if(!sv) return null;
-      var vb=(sv.getAttribute('viewBox')||'').split(/\s+/).map(Number);
-      if (vb.length===4&&vb.every(isFinite)) return {x:vb[0],y:vb[1],w:vb[2],h:vb[3],cx:vb[0]+vb[2]/2,cy:vb[1]+vb[3]/2};
-      var r=sv.getBoundingClientRect(); return {x:0,y:0,w:r.width,h:r.height,cx:r.width/2,cy:r.height/2};
-    }
-    function pxPerMM(){ return 96/25.4; }
-    function addOrUpdateBase(){
-      var sv=mainSVG(), lay=ensureSafariLayer(), vb=viewBoxInfo(); if(!sv||!lay||!vb) return;
-      var diaMM = Number(document.getElementById('sf-dia').value)||450;
-      var color = document.getElementById('sf-wood').value||'#6e4a2f';
-      var rPx = Math.max(10, diaMM*pxPerMM()/2);
-      var c = lay.querySelector('#safari-base');
-      if (!c){
-        c = document.createElementNS('http://www.w3.org/2000/svg','circle');
-        c.setAttribute('id','safari-base');
-        c.setAttribute('class','safari base');
-        lay.insertBefore(c, lay.firstChild);
-      }
-      c.setAttribute('cx', vb.cx);
-      c.setAttribute('cy', vb.cy);
-      c.setAttribute('r',  rPx);
-      c.setAttribute('fill', color);
-      c.setAttribute('stroke', '#1f2937');
-      c.setAttribute('stroke-width','8');
-      c.setAttribute('data-export','true');
-      try{ window.LCS && window.LCS.history && window.LCS.history.push('safari-base'); }catch(_){}
-    }
-    var btn=document.getElementById('sf-add-base');
-    btn && (btn.onclick=addOrUpdateBase);
-    var rng=document.getElementById('sf-dia'), out=document.getElementById('sf-dia-val');
-    rng && (rng.oninput = function(){ out.textContent=this.value; addOrUpdateBase(); });
-    var clr=document.getElementById('sf-wood'); clr && (clr.oninput = addOrUpdateBase);
-  })();
-  </script>
 
-  <!-- Layers Lite (eye/lock) -->
-  <style>
-    #lcs-layers-lite{position:fixed;right:16px;top:60px;z-index:99988;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.15);min-width:180px;max-height:40vh;overflow:auto}
-    #lcs-layers-lite .row{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid #f3f4f6}
-    #lcs-layers-lite .row:last-child{border-bottom:0}
-    #lcs-layers-lite .name{flex:1;font:12px/1.2 system-ui;color:#111827}
-    #lcs-layers-lite button{border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:4px 6px;cursor:pointer;font:600 12px/1 system-ui}
-  </style>
-  <div id="lcs-layers-lite" data-export="false"></div>
-  <script>
-  (function(){
-    if (window.__LCS_LAYERS_LITE__) return; window.__LCS_LAYERS_LITE__=true;
-    var host=document.getElementById('lcs-layers-lite');
-    function s(){ try{ return (window.getSnapshot&&window.getSnapshot())||{} }catch(_){ return {} } }
-    function apply(x){ try{ window.applySnapshot&&window.applySnapshot(x) }catch(_){ } }
-    function render(){
-      host.innerHTML='';
-      var snap=s(); var arr = Array.isArray(snap.layers) ? snap.layers.slice() : [];
-      if (!arr.length){ host.innerHTML='<div style="padding:8px 10px;font:12px system-ui;color:#6b7280">No layers</div>'; return; }
-      arr.forEach(function(ly,idx){
-        var row=document.createElement('div'); row.className='row';
-        var n=document.createElement('div'); n.className='name'; n.textContent = ly.name || ('Layer '+(idx+1));
-        var eye=document.createElement('button'); eye.textContent = (ly.hidden?'👁️‍🗨️':'👁️'); eye.title='Toggle visibility';
-        var lock=document.createElement('button'); lock.textContent = (ly.locked?'🔒':'🔓'); lock.title='Toggle lock';
-        eye.onclick=function(){
-          var ss=s(); if(Array.isArray(ss.layers) && ss.layers[idx]){ ss.layers[idx].hidden = !ss.layers[idx].hidden; apply(ss); try{ window.LCS && window.LCS.history && window.LCS.history.push('layer-visibility'); }catch(_){ } }
-          else { var name = ly.name || ('layer'+idx);
-            document.querySelectorAll('[data-layer="'+name+'"]').forEach(function(el){ el.style.display = (el.style.display==='none'?'':'none'); });
-          }
-          render();
-        };
-        lock.onclick=function(){
-          var ss=s(); if(Array.isArray(ss.layers) && ss.layers[idx]){ ss.layers[idx].locked = !ss.layers[idx].locked; apply(ss); try{ window.LCS && window.LCS.history && window.LCS.history.push('layer-lock'); }catch(_){ } }
-          else { var name = ly.name || ('layer'+idx);
-            document.querySelectorAll('[data-layer="'+name+'"]').forEach(function(el){ el.style.pointerEvents = (el.style.pointerEvents==='none'?'':'none'); el.style.opacity = (el.style.pointerEvents==='none'?0.6:1); });
-          }
-          render();
-        };
-        row.appendChild(n); row.appendChild(eye); row.appendChild(lock); host.appendChild(row);
-      });
+    let baseEntry = (mode==='minus-back') ? items[items.length-1] : items[0];
+    let result=baseEntry.item;
+    if (mode==='unite'){ for (let i=1;i<items.length;i++) result=combine(result,items[i].item,'unite'); }
+    else if (mode==='intersect'){ for (let i=1;i<items.length;i++) result=combine(result,items[i].item,'intersect'); }
+    else if (mode==='exclude'){ for (let i=1;i<items.length;i++) result=combine(result,items[i].item,'exclude'); }
+    else if (mode==='minus-front' || mode==='minus-back'){
+      const cutters = (mode==='minus-back') ? items.slice(0,items.length-1) : items.slice(1);
+      for (const c of cutters) result=combine(result,c.item,'subtract');
     }
-    if (document.readyState==='loading') document.addEventListener('DOMContentLoaded', render); else render();
-    window.addEventListener('lcs:state-applied', render);
-  })();
-  </script>
 
-  <!-- Quick Color Swatches -->
-  <style>
-    #lcs-swatches{position:fixed;left:16px;bottom:140px;z-index:99990;background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.15);padding:6px;display:flex;gap:6px;align-items:center}
-    #lcs-swatches .sw{width:20px;height:20px;border:1px solid #e5e7eb;border-radius:6px;cursor:pointer}
-    #sw-mode{font:600 12px/1 system-ui;border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:6px 8px;cursor:pointer}
-  </style>
-  <div id="lcs-swatches" data-export="false">
-    <button id="sw-mode" title="Toggle Stroke/Fill">Stroke</button>
-    <div class="sw" data-c="#000000" style="background:#000000"></div>
-    <div class="sw" data-c="#ff0000" style="background:#ff0000"></div>
-    <div class="sw" data-c="#00a2ff" style="background:#00a2ff"></div>
-    <div class="sw" data-c="#00c853" style="background:#00c853"></div>
-    <div class="sw" data-c="#ff9800" style="background:#ff9800"></div>
-    <div class="sw" data-c="#ffffff" style="background:linear-gradient(45deg,#fff 0 49%,#eee 50%,#fff 51%);"></div>
-  </div>
-  <script>
-  (function(){
-    if (window.__LCS_SWATCH__) return; window.__LCS_SWATCH__=true;
-    var modeBtn=document.getElementById('sw-mode'), mode='stroke';
-    function isEditable(el){ if(!el) return false; var t=(el.tagName||'').toLowerCase(); return ['input','textarea','select'].includes(t)||!!el.isContentEditable; }
-    function snap(){ try{ return (window.getSnapshot&&window.getSnapshot())||{} }catch(_){ return {} } }
-    function apply(s){ try{ window.applySnapshot&&window.applySnapshot(s) }catch(_){ } }
-    function selectedIds(){ var s=snap(); var sel=Array.isArray(s.selection)?s.selection:(s.selection?[s.selection]:[]); return sel; }
-    function applyState(color){
-      try{
-        var s=snap(), ids=selectedIds(); if(!ids.length) return false;
-        function touch(arr){ if(!Array.isArray(arr)) return; arr.forEach(function(o){ var id=o&&(o.id||o.key||o.uuid); if(id&&ids.includes(id)){ if(mode==='stroke'){ o.stroke=color; if(typeof o.strokeWidth!=='number') o.strokeWidth=1; } else { o.fill=color; } } }); }
-        touch(s.stickers); touch(s.layers); apply(s);
-        try{ window.LCS && window.LCS.history && window.LCS.history.push('color-'+mode); }catch(_){ }
-        return true;
-      }catch(_){ return false; }
+    const pathData=exportPathData(result);
+    paperScope.project.clear();
+    if (!pathData){ notify('Rezultatul operației este gol.'); return; }
+
+    applyPathToShape(baseEntry.ref.node, pathData);
+
+    const keepId=getShapeId(baseEntry.ref.node);
+    const toRemove=refs.filter(r=>r!==baseEntry.ref);
+    toRemove.sort((a,b)=>{ const ai=a.isArray?a.key:0, bi=b.isArray?b.key:0; return bi-ai; });
+    for (const ref of toRemove){
+      if (ref.isArray && Array.isArray(ref.owner)) ref.owner.splice(ref.key,1);
+      else if (ref.owner && typeof ref.owner==='object' && ref.key!=null) delete ref.owner[ref.key];
     }
-    var cssEscape = (window.CSS && window.CSS.escape) ? window.CSS.escape : function(str){ return (str||'').replace(/[^a-zA-Z0-9_-]/g, '\\$&'); };
-    function selectedDom(){
-      var els=[].slice.call(document.querySelectorAll('[data-selected="1"],[aria-selected="true"],.selected'));
-      if (els.length) return els;
-      selectedIds().forEach(function(id){
-        var el=document.querySelector('[data-lcs-id="'+id+'"],[data-id="'+id+'"],#'+cssEscape(id));
-        if (el) els.push(el);
-      });
-      return els;
-    }
-    function applyDom(color){
-      var els=selectedDom(); if(!els.length) return false;
-      els.forEach(function(el){
-        try{
-          if(mode==='stroke'){ el.setAttribute('stroke', color); if(!el.getAttribute('stroke-width')) el.setAttribute('stroke-width','1'); }
-          else { el.setAttribute('fill', color); }
-        }catch(_){}
-      });
-      try{ window.LCS && window.LCS.history && window.LCS.history.push('color-'+mode+'-dom'); }catch(_){ }
-      return true;
-    }
-    document.querySelectorAll('#lcs-swatches .sw').forEach(function(el){
-      el.addEventListener('click', function(){ var c=el.getAttribute('data-c'); if(!applyState(c)) applyDom(c); });
-    });
-    modeBtn.onclick=function(){ mode = (mode==='stroke'?'fill':'stroke'); modeBtn.textContent = (mode==='stroke'?'Stroke':'Fill'); };
-    window.addEventListener('keydown', function(e){
-      if(isEditable(e.target)) return; if(!(e.ctrlKey||e.metaKey)) return;
-      var k=(e.key||'').toLowerCase();
-      if(k==='b'){ e.preventDefault(); mode='stroke'; modeBtn.textContent='Stroke'; }
-      if(k==='f'){ e.preventDefault(); mode='fill'; modeBtn.textContent='Fill'; }
-    }, {passive:false});
-  })();
-  </script>
+    ensureSelection(snap.selection, keepId);
+    applyAndPush(snap, mode);
+    notify('Pathfinder: '+mode.replace('-', ' '), 2000);
+  }
+
+  [['pf-unite','unite'],['pf-intersect','intersect'],['pf-minus-front','minus-front'],['pf-minus-back','minus-back'],['pf-exclude','exclude'],['pf-to-path','to-path']]
+    .forEach(([id,mode])=>{ var btn=document.getElementById(id); if(btn) btn.addEventListener('click', ()=>perform(mode)); });
+
+  window.addEventListener('keydown', (e)=>{
+    if (!e.altKey || e.ctrlKey || e.metaKey) return;
+    const a=document.activeElement; if (a && (a.isContentEditable || ['input','textarea','select'].includes((a.tagName||'').toLowerCase()))) return;
+    const map={u:'unite', i:'intersect', f:'minus-front', b:'minus-back', x:'exclude'};
+    const key=(e.key||'').toLowerCase(); const mode=map[key]; if(!mode) return;
+    e.preventDefault(); perform(mode);
+  });
+
+  notify(defaultHint, 0);
+  console.info('[Pathfinder] UI activat.');
+})();
+</script>
 
 </body>
 </html>
