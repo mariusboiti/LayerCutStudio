@@ -3822,342 +3822,100 @@
     }, {passive:false});
   })();
   </script>
+  <!-- Shortcuts Help (Ctrl+/) -->
+  <style>
+    #lcs-help{display:none;position:fixed;inset:0;z-index:99996;background:rgba(0,0,0,.35);align-items:flex-start;justify-content:center;padding-top:8vh}
+    #lcs-help .box{width:min(760px,92vw);background:#fff;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.35);padding:16px}
+    #lcs-help h3{margin:0 0 8px;font:700 16px system-ui}
+    #lcs-help ul{margin:0;padding-left:18px}
+    #lcs-help li{margin:6px 0}
+    #lcs-help .kbd{font:600 11px system-ui;background:#eef2ff;color:#111827;border:1px solid #e5e7eb;border-radius:6px;padding:2px 6px}
+  </style>
+  <div id="lcs-help" data-export="false">
+    <div class="box">
+      <h3>Shortcuts</h3>
+      <ul>
+        <li><span class="kbd">Ctrl</span> + <span class="kbd">Z</span> – Undo</li>
+        <li><span class="kbd">Ctrl</span> + <span class="kbd">Shift</span> + <span class="kbd">Z</span> / <span class="kbd">Ctrl</span> + <span class="kbd">Y</span> – Redo</li>
+        <li><span class="kbd">Ctrl</span> + <span class="kbd">S</span> – Save • <span class="kbd">Ctrl</span> + <span class="kbd">O</span> – Import</li>
+        <li><span class="kbd">Ctrl</span> + <span class="kbd">=</span>/<span class="kbd">+</span> / <span class="kbd">-</span> / <span class="kbd">0</span> – Zoom in/out/reset</li>
+        <li><span class="kbd">Ctrl</span> + <span class="kbd">K</span> – Command Palette</li>
+        <li><span class="kbd">Alt</span> + <span class="kbd">↑↓←→</span> – Align to edges • <span class="kbd">Shift</span> + <span class="kbd">A</span> – Focus Align bar</li>
+        <li><span class="kbd">Arrow</span> / <span class="kbd">Shift</span> + <span class="kbd">Arrow</span> – Nudge 1px / 10px</li>
+        <li><span class="kbd">Ctrl</span> + <span class="kbd">'</span> – Toggle Grid</li>
+      </ul>
+      <div style="margin-top:10px;text-align:right">
+        <button id="lcs-help-close" style="border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:8px 10px;cursor:pointer">Close</button>
+      </div>
+    </div>
+  </div>
+  <script>
+  (function(){
+    if (window.__LCS_HELP__) return; window.__LCS_HELP__=true;
+    var wrap=document.getElementById('lcs-help'), btn=document.getElementById('lcs-help-close');
+    function open(){ wrap.style.display='flex'; }
+    function close(){ wrap.style.display='none'; }
+    btn && (btn.onclick=close);
+    wrap.onclick=function(e){ if(e.target===wrap) close(); };
+    window.addEventListener('keydown', function(e){
+      if ((e.ctrlKey||e.metaKey) && (e.key==='/')) { e.preventDefault(); open(); }
+      if (e.key==='Escape' && wrap.style.display!=='none'){ e.preventDefault(); close(); }
+    }, {passive:false});
+  })();
+  </script>
 
-<!-- Status bar: unit, zoom, canvas size, cursor -->
-<style>
-  #lcs-statusbar{position:fixed;left:0;right:0;bottom:0;z-index:99980;background:#111827;color:#e5e7eb;padding:6px 10px;font:12px/1.2 system-ui;display:flex;gap:16px;align-items:center}
-  #lcs-statusbar .item{opacity:.9}
-</style>
-<div id="lcs-statusbar">
-  <div class="item" id="sb-unit">Unit: mm</div>
-  <div class="item" id="sb-zoom">Zoom: 100%</div>
-  <div class="item" id="sb-canvas">Canvas: —</div>
-  <div class="item" id="sb-cursor">Cursor: —</div>
-</div>
-<script>
-(function(){
-  if (window.__LCS_STATUSBAR__) return; window.__LCS_STATUSBAR__=true;
-  var elU = document.getElementById('sb-unit'),
-      elZ = document.getElementById('sb-zoom'),
-      elC = document.getElementById('sb-canvas'),
-      elP = document.getElementById('sb-cursor');
-  function snap(){ try{ return (window.getSnapshot&&window.getSnapshot())||{} }catch(_){ return {} } }
-  function svg(){ var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
-    a.sort(function(A,B){function ar(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];var r=x.getBoundingClientRect();return r.width*r.height||0} return ar(B)-ar(A)}); return a[0] }
-  function zoom(){ var s=snap(); var z=Number(s.zoom); return (isFinite(z)&&z>0)?z:1 }
-  function unit(){ var u=(snap().unit||'mm'); return (u==='inches'||u==='inch')?'in':u }
-  function updateBasics(){
-    var s=snap(); var u=unit(); var z=zoom();
-    if (elU) elU.textContent = 'Unit: '+u;
-    if (elZ) elZ.textContent = 'Zoom: '+Math.round(z*100)+'%';
-    var w=0,h=0, sv=svg();
-    var canvas = s.canvas||{};
-    if (typeof canvas.width==='number' && typeof canvas.height==='number'){ w=canvas.width; h=canvas.height; }
-    else if (sv){ var vb=(sv.getAttribute('viewBox')||'').split(/\s+/).map(Number); if(vb.length===4&&vb.every(isFinite)){ w=vb[2]; h=vb[3]; } }
-    if (elC) elC.textContent = 'Canvas: ' + (w|0) + '×' + (h|0) + ' px';
-  }
-  function setupPointer(){
-    var sv=svg(); if(!sv) return;
-    sv.addEventListener('mousemove', function(e){
-      try{
-        var pt = sv.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY;
-        var ctm = sv.getScreenCTM(); if(!ctm) return;
-        var ip = pt.matrixTransform(ctm.inverse());
-        var u=unit(), px2 = (u==='in') ? (1/96) : (25.4/96);
-        elP && (elP.textContent = 'Cursor: ' + (ip.x*px2).toFixed(2) + ' ' + u + ', ' + (ip.y*px2).toFixed(2) + ' ' + u);
-      }catch(_){}}
-    );
-  }
-  updateBasics(); setupPointer();
-  window.addEventListener('lcs:state-applied', updateBasics);
-  window.addEventListener('lcs:zoom-changed', updateBasics);
-})();
-</script>
+  <!-- Status bar: unit, zoom, canvas size, cursor -->
+  <style>
+    #lcs-statusbar{position:fixed;left:0;right:0;bottom:0;z-index:99980;background:#111827;color:#e5e7eb;padding:6px 10px;font:12px/1.2 system-ui;display:flex;gap:16px;align-items:center}
+    #lcs-statusbar .item{opacity:.9}
+  </style>
+  <div id="lcs-statusbar">
+    <div class="item" id="sb-unit">Unit: mm</div>
+    <div class="item" id="sb-zoom">Zoom: 100%</div>
+    <div class="item" id="sb-canvas">Canvas: —</div>
+    <div class="item" id="sb-cursor">Cursor: —</div>
+  </div>
+  <script>
+  (function(){
+    if (window.__LCS_STATUSBAR__) return; window.__LCS_STATUSBAR__=true;
+    var elU = document.getElementById('sb-unit'),
+        elZ = document.getElementById('sb-zoom'),
+        elC = document.getElementById('sb-canvas'),
+        elP = document.getElementById('sb-cursor');
+    function snap(){ try{ return (window.getSnapshot&&window.getSnapshot())||{} }catch(_){ return {} } }
+    function svg(){ var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
+      a.sort(function(A,B){function ar(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];var r=x.getBoundingClientRect();return r.width*r.height||0} return ar(B)-ar(A)}); return a[0] }
+    function zoom(){ var s=snap(); var z=Number(s.zoom); return (isFinite(z)&&z>0)?z:1 }
+    function unit(){ var u=(snap().unit||'mm'); return (u==='inches'||u==='inch')?'in':u }
+    function updateBasics(){
+      var s=snap(); var u=unit(); var z=zoom();
+      if (elU) elU.textContent = 'Unit: '+u;
+      if (elZ) elZ.textContent = 'Zoom: '+Math.round(z*100)+'%';
+      var w=0,h=0, sv=svg();
+      var canvas = s.canvas||{};
+      if (typeof canvas.width==='number' && typeof canvas.height==='number'){ w=canvas.width; h=canvas.height; }
+      else if (sv){ var vb=(sv.getAttribute('viewBox')||'').split(/\s+/).map(Number); if(vb.length===4&&vb.every(isFinite)){ w=vb[2]; h=vb[3]; } }
+      if (elC) elC.textContent = 'Canvas: ' + (w|0) + '×' + (h|0) + ' px';
+    }
+    function setupPointer(){
+      var sv=svg(); if(!sv) return;
+      sv.addEventListener('mousemove', function(e){
+        try{
+          var pt = sv.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY;
+          var ctm = sv.getScreenCTM(); if(!ctm) return;
+          var ip = pt.matrixTransform(ctm.inverse());
+          var u=unit(), px2 = (u==='in') ? (1/96) : (25.4/96);
+          elP && (elP.textContent = 'Cursor: ' + (ip.x*px2).toFixed(2) + ' ' + u + ', ' + (ip.y*px2).toFixed(2) + ' ' + u);
+        }catch(_){}}
+      );
+    }
+    updateBasics(); setupPointer();
+    window.addEventListener('lcs:state-applied', updateBasics);
+    window.addEventListener('lcs:zoom-changed', updateBasics);
+  })();
+  </script>
 
   <!-- removed: duplicate Zoom UI (Fit / 100% in bottom-right) -->
-
-<!-- Marquee Selection (drag to select multiple) – style -->
-<style>
-  svg .selected { outline: none; }
-</style>
-
-<!-- Marquee Selection (drag to select multiple) – fixed for re-renders -->
-<script>
-(function(){
-  if (window.__LCS_MARQUEE__) return; window.__LCS_MARQUEE__ = true;
-
-  function mainSVG(){
-    var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
-    a.sort(function(A,B){
-      function area(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
-        if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];
-        var r=x.getBoundingClientRect(); return r.width*r.height||0;}
-      return area(B)-area(A);
-    });
-    return a[0];
-  }
-  function svgPoint(svg, clientX, clientY){
-    var pt = svg.createSVGPoint(); pt.x = clientX; pt.y = clientY;
-    var m = svg.getScreenCTM(); if (!m) return {x:clientX,y:clientY};
-    var p = pt.matrixTransform(m.inverse()); return {x:p.x, y:p.y};
-  }
-  function ensureMarqueeRect(svg){
-    var g = svg.querySelector('g.lcs-marquee');
-    if (!g){ g = document.createElementNS('http://www.w3.org/2000/svg','g'); g.setAttribute('class','lcs-marquee'); svg.appendChild(g); }
-    var r = g.querySelector('#lcs-marquee-rect');
-    if (!r){
-      r = document.createElementNS('http://www.w3.org/2000/svg','rect');
-      r.setAttribute('id','lcs-marquee-rect');
-      r.setAttribute('fill','#3b82f6'); r.setAttribute('fill-opacity','0.12');
-      r.setAttribute('stroke','#3b82f6'); r.setAttribute('stroke-width','1');
-      r.setAttribute('stroke-dasharray','4,3'); r.setAttribute('pointer-events','none');
-      r.setAttribute('visibility','hidden'); g.appendChild(r);
-    }
-    return r;
-  }
-  function selectableNodes(svg){
-    var list = [].slice.call(svg.querySelectorAll('path,rect,circle,ellipse,polygon,polyline,g'));
-    return list.filter(function(n){
-      var tn = (n.tagName||'').toLowerCase();
-      if (tn==='svg'||tn==='defs'||tn==='clippath'||tn==='title'||tn==='desc') return false;
-      if (n.closest('defs')) return false;
-      return true;
-    });
-  }
-  function bboxOf(el){ try{ var b = el.getBBox(); return {x:b.x,y:b.y,width:b.width,height:b.height}; }catch(_){ return null; } }
-  function rectsOverlap(a,b){ return a && b && (a.x < b.x + b.width) && (a.x + a.width > b.x) && (a.y < b.y + b.height) && (a.y + a.height > b.y); }
-  function normalizeRect(x1,y1,x2,y2){ var x=Math.min(x1,x2),y=Math.min(y1,y2); return {x:x,y:y,width:Math.abs(x2-x1),height:Math.abs(y2-y1)}; }
-  function clearSelection(svg){ [].slice.call(svg.querySelectorAll('[data-selected="1"],.selected')).forEach(function(n){ n.removeAttribute('data-selected'); n.classList.remove('selected'); }); }
-  function addSelected(nodes){ nodes.forEach(function(n){ n.setAttribute('data-selected','1'); n.classList.add('selected'); }); }
-  function canStartMarquee(e){ if (e.altKey) return true; return e.target === curSvg; }
-
-  var curSvg=null, rect=null;
-  var drag = {active:false, start:{x:0,y:0}, additive:false, forced:false};
-
-  document.addEventListener('mousedown', function(e){
-    if (e.button!==0) return;
-    curSvg = (e.target && e.target.closest && e.target.closest('svg')) || mainSVG();
-    if (!curSvg) return;
-    if (!canStartMarquee(e) && e.target!==curSvg) return;
-    rect = ensureMarqueeRect(curSvg);
-    var p = svgPoint(curSvg, e.clientX, e.clientY);
-    drag.active = true; drag.start = p;
-    drag.additive = !!(e.shiftKey || e.ctrlKey || e.metaKey);
-    drag.forced = !!e.altKey;
-    rect.setAttribute('x', p.x); rect.setAttribute('y', p.y);
-    rect.setAttribute('width', 0); rect.setAttribute('height', 0);
-    rect.setAttribute('visibility','visible');
-    e.preventDefault();
-  }, true);
-
-  window.addEventListener('mousemove', function(e){
-    if (!drag.active || !curSvg || !rect) return;
-    var p = svgPoint(curSvg, e.clientX, e.clientY);
-    var r = normalizeRect(drag.start.x, drag.start.y, p.x, p.y);
-    rect.setAttribute('x', r.x); rect.setAttribute('y', r.y);
-    rect.setAttribute('width', r.width); rect.setAttribute('height', r.height);
-    e.preventDefault();
-  }, true);
-
-  window.addEventListener('mouseup', function(e){
-    if (!drag.active || !curSvg || !rect) return;
-    var end = svgPoint(curSvg, e.clientX, e.clientY);
-    var selRect = normalizeRect(drag.start.x, drag.start.y, end.x, end.y);
-    rect.setAttribute('visibility','hidden');
-    drag.active = false;
-
-    var candidates = selectableNodes(curSvg);
-    var picked = [];
-    for (var i=0;i<candidates.length;i++){
-      var bb = bboxOf(candidates[i]); if (!bb) continue;
-      if (rectsOverlap(selRect, bb)) picked.push(candidates[i]);
-    }
-    if (!drag.additive) clearSelection(curSvg);
-    addSelected(picked);
-    try { window.LCS && window.LCS.history && window.LCS.history.push('marquee-select'); }catch(_){}
-    e.preventDefault();
-  }, true);
-})();
-</script>
-
-<!-- BOOT: start with empty canvas (wipe default demo once per page load) -->
-<script>
-(function(){
-  if (window.__LCS_BOOT_EMPTY__) return; window.__LCS_BOOT_EMPTY__=true;
-  if (sessionStorage.getItem('LCS:bootCleared')==='1') return;
-  function mainSVG(){
-    var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
-    a.sort(function(A,B){
-      function ar(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
-        if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3]; var r=x.getBoundingClientRect(); return r.width*r.height||0}
-      return ar(B)-ar(A);
-    });
-    return a[0];
-  }
-  function wipe(svg){
-    if (!svg) return false;
-    var keep = {defs:1,title:1,desc:1,metadata:1,clipPath:1,mask:1,pattern:1,linearGradient:1,radialGradient:1};
-    [].slice.call(svg.childNodes).forEach(function(n){
-      if (n.nodeType!==1) return;
-      var t=(n.tagName||'').toLowerCase();
-      if (!keep[t]) { try{ n.remove(); }catch(_){} }
-    });
-    var g=document.createElementNS('http://www.w3.org/2000/svg','g');
-    g.setAttribute('class','lcs-root'); g.setAttribute('data-export','true');
-    svg.appendChild(g);
-    try{ window.LCS && window.LCS.history && window.LCS.history.push('boot-clear'); }catch(_){}
-    return true;
-  }
-  var tries=0;
-  (function tick(){
-    var svg = mainSVG();
-    if (svg && wipe(svg)){
-      sessionStorage.setItem('LCS:bootCleared','1');
-      return;
-    }
-    if (++tries<120) return setTimeout(tick, 50);
-  })();
-})();
-</script>
-
-<!-- Grid overlay (non-export), toggle Ctrl+' -->
-<style>
-  /* Quickbar fix: poziționat în dreapta-jos, aliniat stânga de bannerul negru (zoom) */
-  #lcs-quickbar{
-    position:fixed;
-    right:160px; /* lasă loc pentru bannerul negru cu slider „Fit / 100%” */
-    bottom:24px;
-    z-index:99992;
-    display:flex;
-    gap:8px;
-    align-items:center;
-    pointer-events:auto;
-  }
-  #lcs-quickbar [data-quick]{border:1px solid #e5e7eb;border-radius:10px;background:#fff;padding:8px 12px;cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,.15);font:600 12px/1 system-ui;color:#111827}
-  #lcs-quickbar .gear{width:40px;height:40px;border-radius:9999px;display:inline-flex;align-items:center;justify-content:center;font-size:18px}
-  /* păstrăm stilul vechi pentru fallback, dar îl ascundem când quickbar este prezent */
-  #lcs-grid-toggle{position:fixed;left:16px;bottom:84px;z-index:99990;background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.15);padding:6px}
-  #lcs-grid-toggle[data-moved="1"]{display:none!important}
-  #lcs-grid-toggle button{border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:6px 10px;cursor:pointer}
-</style>
-<!-- Quickbar: va conține ⚙️ + # Grid (non-export) -->
-<div id="lcs-quickbar" data-export="false" aria-label="Quick actions"></div>
-<!-- Instanța veche (fallback; o vom muta în quickbar prin JS) -->
-<div id="lcs-grid-toggle" data-export="false"><button id="grid-btn" title="Toggle grid (Ctrl+')"># Grid</button></div>
-
-<!-- Quickbar wiring: mută ⚙️ + #Grid (fără scanări DOM sau observers) -->
-<script>
-(function(){
-  if (window.__LCS_QUICKBAR__) return; window.__LCS_QUICKBAR__=true;
-  function byId(id){ return document.getElementById(id); }
-  var qb = byId('lcs-quickbar');
-  if (!qb) return;
-  // 1) Grid: mutăm butonul existent #grid-btn în quickbar (și ascundem containerul vechi)
-  try{
-    var gridBtn = byId('grid-btn');
-    var gridWrap = byId('lcs-grid-toggle');
-    if (gridBtn){
-      gridBtn.setAttribute('data-quick','1');
-      qb.appendChild(gridBtn);
-      if (gridWrap){ gridWrap.setAttribute('data-moved','1'); }
-    }
-  }catch(_){ }
-  // 2) Settings: folosim butonul existent #lcs-gear-btn dacă există; altfel creăm un proxy
-  try{
-    var gearBtn = byId('lcs-gear-btn');
-    var proxy;
-    if (gearBtn){
-      proxy = document.createElement('button');
-      proxy.type = 'button';
-      proxy.className = 'gear';
-      proxy.setAttribute('data-quick','1');
-      proxy.setAttribute('title','Settings');
-      proxy.textContent = '⚙️';
-      proxy.addEventListener('click', function(e){ e.preventDefault(); try{ gearBtn.click(); }catch(_){ } }, {capture:true});
-      qb.appendChild(proxy);
-    } else {
-      proxy = document.createElement('button');
-      proxy.type = 'button';
-      proxy.className = 'gear';
-      proxy.setAttribute('data-quick','1');
-      proxy.setAttribute('title','Settings');
-      proxy.textContent = '⚙️';
-      proxy.addEventListener('click', function(){
-        try{
-          window.dispatchEvent(new CustomEvent('lcs:open-settings'));
-        }catch(_){ }
-      }, {capture:true});
-      qb.appendChild(proxy);
-    }
-  }catch(_){ }
-
-  // 3) Poziție fixă — fără scanări/observatori (evităm blocaje). Ajustează prin CSS dacă vrei alt offset.
-})();
-</script>
-<script>
-(function(){
-  if (window.__LCS_GRID__) return; window.__LCS_GRID__=true;
-  function svg(){ var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null; a.sort(function(A,B){function ar(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];var r=x.getBoundingClientRect();return r.width*r.height||0} return ar(B)-ar(A)}); return a[0] }
-  function unit(){ var u=((window.getSnapshot&&window.getSnapshot())||{}).unit||'mm'; return (u==='inches'||u==='inch')?'in':u }
-  function ensureGroup(){
-    var sv=svg(); if(!sv) return null;
-    var g=sv.querySelector('g.lcs-grid-layer'); if(g) return g;
-    g=document.createElementNS('http://www.w3.org/2000/svg','g');
-    g.setAttribute('class','grid lcs-grid-layer'); g.setAttribute('data-export','false'); g.setAttribute('pointer-events','none');
-    sv.insertBefore(g, sv.firstChild);
-    return g;
-  }
-  function draw(){
-    var sv=svg(); if(!sv) return;
-    var g=ensureGroup(); if(!g) return;
-    while(g.firstChild) g.removeChild(g.firstChild);
-    var vb=(sv.getAttribute('viewBox')||'').split(/\s+/).map(Number);
-    var x=0,y=0,w=0,h=0; if(vb.length===4&&vb.every(isFinite)){x=vb[0];y=vb[1];w=vb[2];h=vb[3];} else {var bb=sv.getBBox(); x=bb.x;y=bb.y;w=bb.width;h=bb.height;}
-    var u=unit();
-    var stepPx = (u==='in') ? (96/2) : (96/25.4*10); // 0.5in sau 10mm
-    var minor = stepPx/5;
-    for(var X=Math.floor(x/minor)*minor; X<=x+w; X+=minor){
-      var l=document.createElementNS('http://www.w3.org/2000/svg','line');
-      l.setAttribute('x1',X); l.setAttribute('y1',y);
-      l.setAttribute('x2',X); l.setAttribute('y2',y+h);
-      l.setAttribute('stroke','#e5e7eb'); l.setAttribute('stroke-width','0.6');
-      g.appendChild(l);
-    }
-    for(var Y=Math.floor(y/minor)*minor; Y<=y+h; Y+=minor){
-      var l=document.createElementNS('http://www.w3.org/2000/svg','line');
-      l.setAttribute('x1',x); l.setAttribute('y1',Y);
-      l.setAttribute('x2',x+w); l.setAttribute('y2',Y);
-      l.setAttribute('stroke','#e5e7eb'); l.setAttribute('stroke-width','0.6');
-      g.appendChild(l);
-    }
-    for(var X=Math.floor(x/stepPx)*stepPx; X<=x+w; X+=stepPx){
-      var l=document.createElementNS('http://www.w3.org/2000/svg','line');
-      l.setAttribute('x1',X); l.setAttribute('y1',y);
-      l.setAttribute('x2',X); l.setAttribute('y2',y+h);
-      l.setAttribute('stroke','#c7cdd4'); l.setAttribute('stroke-width','1');
-      g.appendChild(l);
-    }
-    for(var Y=Math.floor(y/stepPx)*stepPx; Y<=y+h; Y+=stepPx){
-      var l=document.createElementNS('http://www.w3.org/2000/svg','line');
-      l.setAttribute('x1',x); l.setAttribute('y1',Y);
-      l.setAttribute('x2',x+w); l.setAttribute('y2',Y);
-      l.setAttribute('stroke','#c7cdd4'); l.setAttribute('stroke-width','1');
-      g.appendChild(l);
-    }
-  }
-  function toggle(){
-    var g=ensureGroup(); if(!g) return;
-    var vis = g.getAttribute('display')==='none' ? '' : 'none';
-    g.setAttribute('display', vis);
-  }
-  document.getElementById('grid-btn').onclick = function(){ draw(); toggle(); };
-  window.addEventListener('keydown', function(e){
-    var k=e.key||''; if((e.ctrlKey||e.metaKey) && (k==="'" || k==='’')){ e.preventDefault(); draw(); toggle(); }
-  }, {passive:false});
-  window.addEventListener('lcs:state-applied', function(){ var g=document.querySelector('g.lcs-grid-layer'); if(g && g.getAttribute('display')!=='none'){ draw(); } });
-  window.addEventListener('lcs:zoom-changed', function(){ var g=document.querySelector('g.lcs-grid-layer'); if(g && g.getAttribute('display')!=='none'){ draw(); } });
-})();
-</script>
 
 </body>
 </html>
