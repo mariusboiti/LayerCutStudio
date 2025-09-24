@@ -2721,23 +2721,40 @@
     }
 
     function hideProjectPanel(){
-      // Găsește panoul „Project & autosave” și îl elimină (sau îl ascunde discret)
-      var cand = null;
-      qsa('section,div').some(function(el){
-        try{
-          var txt = (el.textContent||'').toLowerCase();
-          if (txt.includes('project') && txt.includes('autosave')){
-            // are butoanele Save/Export/Import?
-            if (txt.includes('save now') || txt.includes('export') || txt.includes('import')){
-              cand = el; return true;
+      // 1) dacă avem un id/cârlig dedicat, îl folosim
+      var panel = document.getElementById('lcs-project-panel');
+      // 2) altfel căutăm DOAR cardul care conține textul specific și butoanele, dar NU un container părinte mare
+      if (!panel){
+        qsa('section,div').forEach(function(el){
+          try{
+            if (panel) return;
+            // card-uri compacte (au padding și border) – evităm containerele mari
+            var style = window.getComputedStyle(el);
+            var looksLikeCard = (parseInt(style.paddingTop)||0) >= 8 && (style.backgroundColor !== 'rgba(0, 0, 0, 0)');
+            var txt = (el.textContent||'').toLowerCase();
+            var hasKey = txt.includes('project') && (txt.includes('autosave') || txt.includes('autosave to browser'));
+            var hasBtns = /save now|load from autosave|export\s*\.lcs|export svg for laser|import\s*\.lcs/i.test(el.textContent||'');
+            if (looksLikeCard && hasKey && hasBtns){
+              panel = el;
             }
-          }
-        }catch(_){ }
-        return false;
-      });
-      if (cand){
-        // înlătură total pentru a elibera spațiu
-        try{ cand.remove(); }catch(_){ cand.style.display='none'; }
+          }catch(_){ }
+        });
+      }
+      if (panel){
+        // Ascundem doar cardul, fără remove(), ca să nu atingem React/flow-ul de layout.
+        panel.setAttribute('data-lcs-hidden','1');
+        panel.style.display = 'none';
+        // Siguranță: dacă după ascundere nu mai vedem niciun <svg>, revert.
+        setTimeout(function(){
+          try{
+            var hasSVG = !!document.querySelector('svg');
+            if (!hasSVG){
+              panel.style.display = '';
+              panel.removeAttribute('data-lcs-hidden');
+              console.warn('[LCS] Project panel restore: no SVG detected after hide.');
+            }
+          }catch(_){ }
+        }, 0);
       }
     }
 
