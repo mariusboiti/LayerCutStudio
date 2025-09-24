@@ -4422,5 +4422,155 @@
   })();
   </script>
 
+    <!-- === PATCH: Boolean Ops fixed top bar (Illustrator-style icons) === -->
+    <style>
+      #boolean-ops {
+        position: fixed;
+        top: 16px;
+        right: 72px;
+        z-index: 99995;
+        display: flex;
+        gap: 6px;
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
+        padding: 6px 8px;
+      }
+      #boolean-ops button {
+        border: 0;
+        background: transparent;
+        cursor: pointer;
+        padding: 6px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #boolean-ops button:hover { background: #f3f4f6; }
+      #boolean-ops button:active { transform: translateY(1px); }
+      #boolean-ops svg {
+        width: 20px;
+        height: 20px;
+        stroke: #111827;
+        stroke-width: 2;
+        fill: none;
+      }
+      @media (max-width: 900px) {
+        #boolean-ops {
+          right: 60px;
+          top: 12px;
+        }
+      }
+    </style>
+    <div id="boolean-ops" data-export="false" aria-label="Boolean Ops">
+      <button id="bo-unite" title="Unite (Alt+U)">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 3h8v8H3zM13 13h8v8h-8zM7 7h10v10H7z"></path>
+        </svg>
+      </button>
+      <button id="bo-intersect" title="Intersect (Alt+I)">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 7h10v10H7z"></path>
+        </svg>
+      </button>
+      <button id="bo-minus-front" title="Minus Front (Alt+F)">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 3h14v14H3zM9 9h12v12H9z"></path>
+        </svg>
+      </button>
+      <button id="bo-minus-back" title="Minus Back (Alt+B)">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9 9h12v12H9zM3 3h14v14H3z"></path>
+        </svg>
+      </button>
+      <button id="bo-exclude" title="Exclude (Alt+X)">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 3h8v8H3zM13 13h8v8h-8zM13 3h8v8h-8zM3 13h8v8H3z"></path>
+        </svg>
+      </button>
+      <button id="bo-to-path" title="To Path (Alt+P)">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 4h16v16H4z"></path>
+        </svg>
+      </button>
+    </div>
+    <script>
+      (function () {
+        if (window.__BOOLEAN_TOP__) return;
+        window.__BOOLEAN_TOP__ = true;
+
+        function findOpButton(text) {
+          text = (text || "").toLowerCase();
+          var candidates = Array.from(
+            document.querySelectorAll("button, [role='button']")
+          );
+          return candidates.find(function (b) {
+            var t = (b.innerText || b.textContent || "")
+              .trim()
+              .toLowerCase();
+            return t === text || t.includes(text);
+          });
+        }
+
+        function forward(id, label) {
+          var el = document.getElementById(id);
+          if (!el) return;
+          el.addEventListener("click", function () {
+            var btn = findOpButton(label);
+            if (btn) {
+              btn.click();
+            } else {
+              console.warn("[BooleanOpsTop] missing original button for", label);
+            }
+          });
+        }
+
+        forward("bo-unite", "unite");
+        forward("bo-intersect", "intersect");
+        forward("bo-minus-front", "minus front");
+        forward("bo-minus-back", "minus back");
+        forward("bo-exclude", "exclude");
+        forward("bo-to-path", "to path");
+
+        window.addEventListener(
+          "keydown",
+          function (e) {
+            if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+            var k = (e.key || "").toLowerCase();
+            var map = {
+              u: "bo-unite",
+              i: "bo-intersect",
+              f: "bo-minus-front",
+              b: "bo-minus-back",
+              x: "bo-exclude",
+              p: "bo-to-path",
+            };
+            var id = map[k];
+            if (!id) return;
+            var el = document.getElementById(id);
+            if (!el) return;
+            e.preventDefault();
+            el.click();
+          },
+          { passive: false }
+        );
+
+        try {
+          var old = findOpButton("unite");
+          if (old) {
+            var panel =
+              old.closest(".card") ||
+              old.closest("[style*='border']") ||
+              old.closest("div");
+            if (panel && !document.getElementById("boolean-ops").contains(panel)) {
+              panel.style.display = "none";
+            }
+          }
+        } catch (_) {}
+      })();
+    </script>
+    <!-- === /PATCH Boolean Ops === -->
+
 </body>
 </html>
