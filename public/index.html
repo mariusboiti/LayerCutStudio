@@ -4424,10 +4424,15 @@
 
     <!-- === PATCH: Boolean Ops fixed top bar (Illustrator-style icons) === -->
     <style>
+      /* folosește variabile CSS; JS le suprascrie ca să se lipească de gear */
+      :root {
+        --bo-top: 16px;
+        --bo-right: 72px;
+      }
       #boolean-ops {
         position: fixed;
-        top: 16px;
-        right: 72px;
+        top: var(--bo-top);
+        right: var(--bo-right);
         z-index: 99995;
         display: flex;
         gap: 6px;
@@ -4457,9 +4462,9 @@
         fill: none;
       }
       @media (max-width: 900px) {
-        #boolean-ops {
-          right: 60px;
-          top: 12px;
+        :root {
+          --bo-top: 12px;
+          --bo-right: 60px;
         }
       }
     </style>
@@ -4567,6 +4572,78 @@
               panel.style.display = "none";
             }
           }
+        } catch (_) {}
+
+        // === Gear alignment: plasează bara lângă butonul de setări/proiect ===
+        function findGear() {
+          // caută elemente care par a fi "gear" / settings
+          var nodes = Array.from(
+            document.querySelectorAll("[aria-label],[title],button,[role='button'],.btn,.icon")
+          );
+          var keywords = ["settings", "setări", "gear", "config", "preferences", "project"];
+          function score(n) {
+            var s = (
+              (n.getAttribute("aria-label") || "") +
+              " " +
+              (n.getAttribute("title") || "") +
+              " " +
+              (n.className || "")
+            ).toLowerCase();
+            var t = (n.textContent || "").toLowerCase();
+            var k = 0;
+            keywords.forEach(function (w) {
+              if (s.includes(w) || t.includes(w)) k++;
+            });
+            // bonus dacă conține un SVG (de obicei icon)
+            if (n.querySelector && n.querySelector("svg")) k += 0.5;
+            // penalizează elemente invizibile
+            var r = n.getBoundingClientRect();
+            if (r.width < 20 || r.height < 20) k -= 0.25;
+            return k;
+          }
+          var best = null,
+            bestScore = 0;
+          nodes.forEach(function (n) {
+            var sc = score(n);
+            if (sc > bestScore) {
+              bestScore = sc;
+              best = n;
+            }
+          });
+          return best;
+        }
+        function placeNearGear() {
+          var bar = document.getElementById("boolean-ops");
+          if (!bar) return;
+          var gear = findGear();
+          if (!gear) {
+            return;
+          } // păstrează fallback-ul implicit
+          var r = gear.getBoundingClientRect();
+          // plasează bara imediat la stânga iconiței gear, aliniere pe verticală
+          var gap = 8;
+          var right = Math.max(8, window.innerWidth - r.left + gap);
+          var top = Math.max(8, r.top + r.height / 2 - bar.offsetHeight / 2);
+          // scrie în variabilele CSS
+          document.documentElement.style.setProperty("--bo-right", right.toFixed(0) + "px");
+          document.documentElement.style.setProperty("--bo-top", top.toFixed(0) + "px");
+        }
+        // încearcă după mount + pe resize/scroll
+        window.addEventListener(
+          "load",
+          function () {
+            setTimeout(placeNearGear, 60);
+          },
+          { once: true }
+        );
+        window.addEventListener("resize", placeNearGear, { passive: true });
+        window.addEventListener("scroll", placeNearGear, { passive: true });
+        // re-aliniază când DOM-ul se schimbă (UI din React)
+        try {
+          var mo = new MutationObserver(function () {
+            placeNearGear();
+          });
+          mo.observe(document.body, { childList: true, subtree: true });
         } catch (_) {}
       })();
     </script>
