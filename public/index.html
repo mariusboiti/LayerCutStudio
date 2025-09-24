@@ -3093,5 +3093,47 @@
     }, {passive:false});
   })();
   </script>
+  <script>
+  (function(){
+    if (window.__PF_UNITE_INTERSECT__) return; window.__PF_UNITE_INTERSECT__=true;
+    var PF = window.__PF__;
+    function replaceWithResult(origNodes, paperItem){
+      if (!origNodes.length || !paperItem) return;
+      var top = origNodes[origNodes.length-1]; // stil de la “front”
+      var parent = origNodes[0].parentNode;
+      var out = PF.exportPaperToElement(paperItem, top);
+      // marchează ca selectat
+      out.setAttribute('data-selected','1'); out.classList.add('selected');
+      // șterge vechile noduri
+      origNodes.forEach(function(n){ try{ n.remove(); }catch(_){ } });
+      parent && parent.appendChild(out);
+      PF.pushHistory('pf-op');
+    }
+    function opUnite(){
+      var nodes = PF.getSelectionDom(); if (nodes.length<2){ alert('Selectează minim 2 forme'); return; }
+      var items = PF.importToPaper(nodes); if (items.length<2){ alert('Nu pot importa formele'); return; }
+      var result = items[0];
+      for (var i=1;i<items.length;i++){ result = result.unite(items[i]); }
+      replaceWithResult(nodes, result);
+    }
+    function opIntersect(){
+      var nodes = PF.getSelectionDom(); if (nodes.length<2){ alert('Selectează minim 2 forme'); return; }
+      var items = PF.importToPaper(nodes); if (items.length<2){ alert('Nu pot importa formele'); return; }
+      var result = items[0];
+      for (var i=1;i<items.length;i++){ result = result.intersect(items[i]); }
+      replaceWithResult(nodes, result);
+    }
+    // UI
+    var $=id=>document.getElementById(id);
+    $('#pf-unite')     && ($('#pf-unite').onclick=opUnite);
+    $('#pf-intersect') && ($('#pf-intersect').onclick=opIntersect);
+    // scurtături
+    window.addEventListener('keydown', function(e){
+      if (!(e.altKey)) return; var k=(e.key||'').toLowerCase();
+      if (k==='u'){ e.preventDefault(); opUnite(); }
+      if (k==='i'){ e.preventDefault(); opIntersect(); }
+    }, {passive:false});
+  })();
+  </script>
 </body>
 </html>
