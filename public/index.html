@@ -3093,5 +3093,58 @@
     }, {passive:false});
   })();
   </script>
+  <script>
+  (function(){
+    if (window.__PF_EXCLUDE_TOPATH__) return; window.__PF_EXCLUDE_TOPATH__=true;
+    var PF = window.__PF__;
+    function ensurePF(){
+      if (!PF || typeof PF.importToPaper !== 'function' || typeof PF.exportPaperToElement !== 'function'){
+        alert('PaperFaces nu este disponibil');
+        return false;
+      }
+      return true;
+    }
+    function opExclude(){
+      if (!ensurePF()) return;
+      var nodes = PF.getSelectionDom ? PF.getSelectionDom() : [];
+      if (!nodes || nodes.length < 2){ alert('Selectează minim 2 forme'); return; }
+      var items = PF.importToPaper(nodes);
+      if (!items || items.length < 2){ alert('Nu pot importa formele'); return; }
+      var result = items[0];
+      for (var i=1;i<items.length;i++){ result = result.exclude(items[i]); }
+      replace(nodes, result);
+    }
+    function opToPath(){
+      if (!ensurePF()) return;
+      var nodes = PF.getSelectionDom ? PF.getSelectionDom() : [];
+      if (!nodes || !nodes.length){ alert('Selectează o formă'); return; }
+      // import/export 1:1 pentru “flatten to path”
+      var items = PF.importToPaper(nodes);
+      if (!items || !items.length){ alert('Nu pot converti'); return; }
+      var union = items[0];
+      for (var i=1;i<items.length;i++){ union = union.unite(items[i]); }
+      replace(nodes, union);
+    }
+    function replace(nodes, item){
+      if (!item || !nodes || !nodes.length) return;
+      var top = nodes[nodes.length-1];
+      var parent = nodes[0] && nodes[0].parentNode;
+      var out = PF.exportPaperToElement(item, top);
+      out.setAttribute('data-selected','1');
+      out.classList.add('selected');
+      nodes.forEach(function(n){ try{ n.remove(); }catch(_){ } });
+      if (parent) parent.appendChild(out);
+      PF.pushHistory('pf-op');
+    }
+    var $=function(id){ return document.getElementById(id); };
+    if ($('pf-exclude')) $('pf-exclude').onclick = opExclude;
+    if ($('pf-to-path')) $('pf-to-path').onclick = opToPath;
+    window.addEventListener('keydown', function(e){
+      if (!e.altKey) return;
+      var k = (e.key || '').toLowerCase();
+      if (k === 'x'){ e.preventDefault(); opExclude(); }
+    }, {passive:false});
+  })();
+  </script>
 </body>
 </html>
