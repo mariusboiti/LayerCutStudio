@@ -198,6 +198,108 @@
  </script>
 <body>
 
+    <!-- === PATCH: Sidebar full-left + Canvas fills the rest === -->
+    <style id="lcs-layout-style">
+      /* containerul flex aplicat dinamic pe părintele comun */
+      .lcs-flex-h {
+        display: flex !important;
+        align-items: stretch !important;
+        gap: 0 !important;
+        width: 100% !important;
+        height: calc(100vh - 64px); /* lasă loc header-ului aplicației */
+        box-sizing: border-box;
+      }
+      /* bara stângă (formular) */
+      .lcs-sidebar {
+        width: 340px;           /* poți ajusta 300–380px după preferință */
+        min-width: 280px;
+        max-width: 420px;
+        border-right: 1px solid #e5e7eb;
+        background: #fff;
+        overflow: auto;
+        padding-left: 0 !important;
+        margin-left: 0 !important;
+      }
+      /* canvas-ul: ia tot spațiul rămas */
+      .lcs-canvas {
+        flex: 1 1 auto !important;
+        min-width: 0;
+        overflow: hidden;
+        background: #fafafa;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      /* elimină marginile/padding-urile laterale care împing la dreapta/stânga */
+      .lcs-reset-pad {
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      @media (max-width: 1024px){
+        .lcs-layout-root { height: auto !important; }
+        .lcs-sidebar { width: 300px; }
+      }
+    </style>
+    <script>
+    (function(){
+      if (window.__LCS_LAYOUT_FLEX__) return; window.__LCS_LAYOUT_FLEX__=true;
+
+      // Caută panoul de control din stânga pe baza textelor tipice
+      function findSidebar(){
+        var hints = ['Font','Text (rând','Stickere','Transform','Unități','Rotunjit'];
+        var nodes = Array.from(document.querySelectorAll('body div, body aside, body section'));
+        function score(n){
+          var txt = (n.textContent||'').toLowerCase();
+          var s = 0;
+          for (var i=0;i<hints.length;i++){ if (txt.indexOf(hints[i].toLowerCase())>=0) s++; }
+          // mai multe input-uri/label-uri => probabil formular
+          var controls = n.querySelectorAll('input,select,button,label').length;
+          s += Math.min(3, controls/10);
+          // să nu fie uriaș (canvas)
+          var r = n.getBoundingClientRect();
+          if (r.width > 200 && r.width < window.innerWidth*0.6) s += 0.5;
+          return s;
+        }
+        var best=null, bs=0;
+        nodes.forEach(function(n){ var sc=score(n); if(sc>bs){bs=sc; best=n;} });
+        return best;
+      }
+
+      // Caută containerul canvas-ului (SVG mare sau grid central)
+      function findCanvas(){
+        // ia cel mai mare <svg> și întoarce containerul lui
+        var svgs = Array.from(document.querySelectorAll('svg'));
+        if (!svgs.length) return null;
+        svgs.sort(function(a,b){
+          var ra=a.getBoundingClientRect(), rb=b.getBoundingClientRect();
+          return (rb.width*rb.height) - (ra.width*ra.height);
+        });
+        var host = svgs[0].closest('div,section,main') || svgs[0].parentElement;
+        return host;
+      }
+
+      function makeFlex(){
+        var left = findSidebar();
+        var right = findCanvas();
+        if (!left || !right) return;
+        // părinte comun
+        var parent = left.parentElement;
+        while (parent && !parent.contains(right)) parent = parent.parentElement;
+        if (!parent) return;
+        parent.classList.add('lcs-flex-h','lcs-layout-root','lcs-reset-pad');
+        left.classList.add('lcs-sidebar','lcs-reset-pad');
+        right.classList.add('lcs-canvas','lcs-reset-pad');
+      }
+
+      // aplică acum și la schimbări (React mount)
+      makeFlex();
+      var mo=new MutationObserver(function(){ makeFlex(); });
+      mo.observe(document.body,{childList:true,subtree:true});
+      window.addEventListener('resize', makeFlex, {passive:true});
+    })();
+    </script>
+    <!-- === /PATCH: Sidebar full-left + Canvas fills the rest === -->
+
 <!-- === PATCH: Temp hide Outline & Hatch panels (+ Alt+Shift+H toggle) === -->
 <style id="lcs-temphide-style">
   /* Ascunde temporar panourile încercuite în poză */
