@@ -3093,5 +3093,48 @@
     }, {passive:false});
   })();
   </script>
+  <!-- Safari Kit • PATCH 4: Name Preset (BLOCK + Script) -->
+  <style>
+    #safari-names{position:fixed;right:16px;top:468px;z-index:99990;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.15);padding:10px;min-width:220px}
+    #safari-names button{border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:6px 10px;cursor:pointer}
+  </style>
+  <div id="safari-names">
+    <button id="sf-preset-names">🖊️ Name Preset…</button>
+  </div>
+  <script>
+  (function(){
+    if (window.__SAFARI_NAMES__) return; window.__SAFARI_NAMES__=true;
+    function setInput(selector, val){
+      var el=document.querySelector(selector); if(!el) return false;
+      el.value = val; el.dispatchEvent(new Event('input',{bubbles:true})); el.dispatchEvent(new Event('change',{bubbles:true})); return true;
+    }
+    function chooseFont(name){
+      // caută în dropdown-ul de font existent
+      var sel=document.querySelector('select'); // în UI-ul tău primul <select> e fontul
+      if (!sel) return;
+      var opt=[].slice.call(sel.options).find(function(o){return (o.textContent||'').toLowerCase().includes(name)});
+      if (opt){ sel.value=opt.value; sel.dispatchEvent(new Event('change',{bubbles:true})); }
+    }
+    function preset(){
+      var first = prompt('First name (UPPERCASE)', 'HUDSON') || '';
+      var middle = prompt('Middle name (Script)', 'James') || '';
+      // setează textele (1 & 2)
+      setInput('input[placeholder^="Text"]', first.toUpperCase());
+      var inputs=document.querySelectorAll('input[type="text"]');
+      if (inputs[1]){ inputs[1].value = middle; inputs[1].dispatchEvent(new Event('input',{bubbles:true})); inputs[1].dispatchEvent(new Event('change',{bubbles:true})); }
+      // alege fonturi: un BLOCK și un Script (după denumire)
+      chooseFont('demo'); // ex. Demo Font Regular ca block; ajustează dacă ai alt font
+      // poziționează linia 2 puțin sub centru via zoom/state dacă ai API, altfel lăsăm manual
+      try{
+        if (typeof window.getSnapshot==='function' && typeof window.applySnapshot==='function'){
+          var s=window.getSnapshot()||{};
+          // dacă ai s.text sau s.layers — aici doar împingem în istoric ca să existe pas
+          window.LCS && window.LCS.history && window.LCS.history.push('names-preset');
+        }
+      }catch(_){ }
+    }
+    document.getElementById('sf-preset-names').onclick = preset;
+  })();
+  </script>
 </body>
 </html>
