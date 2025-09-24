@@ -66,6 +66,7 @@
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/opentype.js@1.3.4/dist/opentype.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/paper.js/0.12.15/paper-core.min.js" integrity="sha512-B/1GJt8BK0WRxUfHb44wSIB86ugvWK+plV4CnIaWnflHTZCV7U866CrVnSYbycHtHTP5Lx9XzVD2TFAnVb4S6g==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script src="https://cdn.jsdelivr.net/npm/clipper-lib@6.4.2/clipper.js"></script>
 
   <style>
@@ -194,9 +195,10 @@
     })();
   </script>
     <!-- KILO TEST BANNER (ABS PATH) -->
-    <div id="kilo-banner" style="position:sticky;top:0;z-index:9999;background:#2563eb;color:#fff;padding:8px 12px;text-align:center;font-weight:700;font-family:system-ui">
+  <div id="kilo-banner" style="position:sticky;top:0;z-index:9999;background:#2563eb;color:#fff;padding:8px 12px;text-align:center;font-weight:700;font-family:system-ui">
       KILO PATCH OK ✅ (ABS PATH)
     </div>
+  <canvas id="pf-canvas" width="1" height="1" style="display:none"></canvas>
   <div class="topbar">
    <div class="topbar-inner">
      <!-- logo simplu (două forme suprapuse) -->
@@ -3091,6 +3093,77 @@
       var k=(e.key||'').toLowerCase();
       if (k === 'k'){ e.preventDefault(); open(); }
     }, {passive:false});
+  })();
+  </script>
+  <script>
+  (function(){
+    if (window.__PF_HELPERS__) return; window.__PF_HELPERS__=true;
+    // setup Paper pe canvas ascuns
+    var pfCanvas = document.getElementById('pf-canvas');
+    paper.setup(pfCanvas);
+
+    function mainSVG(){
+      var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
+      a.sort(function(A,B){
+        function ar(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
+          if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3]; var r=x.getBoundingClientRect(); return r.width*r.height||0}
+        return ar(B)-ar(A)});
+      return a[0];
+    }
+    function getSelectionDom(){
+      var root=mainSVG()||document;
+      var els=[].slice.call(root.querySelectorAll('[data-selected="1"],[aria-selected="true"],.selected'));
+      // fallback din snapshot
+      try{
+        if (!els.length && typeof window.getSnapshot==='function'){
+          var s=window.getSnapshot()||{}, ids=Array.isArray(s.selection)?s.selection:(s.selection?[s.selection]:[]);
+          ids.forEach(function(id){
+            var el=document.querySelector('[data-lcs-id="'+id+'"],[data-id="'+id+'"],#'+(window.CSS&&CSS.escape?CSS.escape(id):id));
+            if (el) els.push(el);
+          });
+        }
+      }catch(_){ }
+      // filtrează doar elemente SVG
+      els = els.filter(function(n){ return !!n.ownerSVGElement || n.tagName==='svg'; });
+      return els;
+    }
+    // serialize o listă de noduri într-un <svg> minim pentru import
+    function asSVGString(nodes){
+      var svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+      svg.setAttribute('xmlns','http://www.w3.org/2000/svg');
+      nodes.forEach(function(n){ svg.appendChild(n.cloneNode(true)); });
+      return new XMLSerializer().serializeToString(svg);
+    }
+    // import cu Paper și întoarce o listă de PathItem/CompoundPath
+    function importToPaper(nodes){
+      paper.project.clear();
+      var svgString = asSVGString(nodes);
+      var imported = paper.project.importSVG(svgString, { expandShapes: true, insert: true });
+      // aplatizează într-o listă de shape-uri (paths/compound)
+      var items=[];
+      imported.children.forEach(function(ch){ ch.flatten && ch.flatten(0.1); });
+      imported.descendants.forEach(function(it){
+        if (it.className==='Path' || it.className==='CompoundPath'){ items.push(it); }
+      });
+      return items;
+    }
+    // exportă Paper item → element SVG (path sau <g>)
+    function exportPaperToElement(item, styleFrom){
+      var str = item.exportSVG({ asString:true, precision:2 });
+      var doc = new DOMParser().parseFromString(str, 'image/svg+xml');
+      var el = doc.documentElement;
+      // copiem stil de la topmost (fill/stroke)
+      if (styleFrom){
+        ['fill','stroke','stroke-width','stroke-linejoin','stroke-linecap'].forEach(function(k){
+          var v=styleFrom.getAttribute(k); if (v!=null) el.setAttribute(k,v);
+        });
+      }
+      return document.importNode(el, true);
+    }
+    // face push în istoric dacă există
+    function pushHistory(tag){ try{ window.LCS && window.LCS.history && window.LCS.history.push(tag||'pathfinder'); }catch(_){ } }
+
+    window.__PF__ = { mainSVG, getSelectionDom, importToPaper, exportPaperToElement, pushHistory };
   })();
   </script>
 </body>
