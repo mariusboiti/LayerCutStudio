@@ -3093,5 +3093,38 @@
     }, {passive:false});
   })();
   </script>
+  <!-- Safari Kit • PATCH 5: Auto Layout pe baza cercului -->
+  <style>
+    #safari-layout{position:fixed;right:16px;top:528px;z-index:99990;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.15);padding:10px;min-width:220px}
+    #safari-layout button{border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:6px 10px;cursor:pointer}
+  </style>
+  <div id="safari-layout"><button id="sf-layout">✨ Apply Safari Layout</button></div>
+  <script>
+  (function(){
+    if (window.__SAFARI_LAYOUT__) return; window.__SAFARI_LAYOUT__=true;
+    function mainSVG(){ var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null; a.sort(function(A,B){function ar(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];var r=x.getBoundingClientRect();return r.width*r.height||0} return ar(B)-ar(A)}); return a[0] }
+    function layer(){ var sv=mainSVG(); if(!sv) return null; var g=sv.querySelector('g.lcs-safari'); if(!g){ g=document.createElementNS('http://www.w3.org/2000/svg','g'); g.setAttribute('class','lcs-safari'); sv.appendChild(g); } return g; }
+    function vb(){ var sv=mainSVG(); if(!sv) return {cx:0,cy:0}; var b=(sv.getAttribute('viewBox')||'').split(/\s+/).map(Number); if(b.length===4&&b.every(isFinite)) return {cx:b[0]+b[2]/2,cy:b[1]+b[3]/2}; var r=sv.getBoundingClientRect(); return {cx:r.width/2,cy:r.height/2}; }
+    function setTransform(el, tx, ty, rot){
+      el.setAttribute('transform','translate('+tx+','+ty+') rotate('+(rot||0)+')');
+    }
+    function applyLayout(){
+      var sv=mainSVG(), g=layer(), center=vb(); if(!sv||!g) return;
+      var base = g.querySelector('#safari-base'); if (!base){ alert('Add Base first'); return; }
+      var r = parseFloat(base.getAttribute('r'))||200;
+      var cx = parseFloat(base.getAttribute('cx'))||center.cx;
+      var cy = parseFloat(base.getAttribute('cy'))||center.cy;
+      // giraffe în stânga-jos
+      var gf = g.querySelector('g.safari.giraffe'); if (gf) setTransform(gf, cx - r*0.65, cy + r*0.05, 0);
+      // frunze sus-stânga și jos-stânga
+      var leaves = [].slice.call(g.querySelectorAll('g.safari.leaf'));
+      if (leaves[0]) setTransform(leaves[0], cx - r*0.25, cy - r*0.80, -12);
+      if (leaves[1]) setTransform(leaves[1], cx - r*0.55, cy + r*0.35, 8);
+      // textul rămâne în centru — dacă ai snapshot, putem micșora spațiul dintre rânduri etc.
+      try{ window.LCS && window.LCS.history && window.LCS.history.push('safari-layout'); }catch(_){ }
+    }
+    document.getElementById('sf-layout').onclick = applyLayout;
+  })();
+  </script>
 </body>
 </html>
