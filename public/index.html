@@ -4,6 +4,78 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>LayerCut Studio — LaserFilesPro</title>
+
+  <!-- Safari Kit • Unified Stage -->
+  <style>
+    /* ===== Safari Stage: container unificat ===== */
+    #safari-stage {
+      position: relative;
+      /* schimbă după cum vrei: dacă vrei overlay global, înlocuiește cu fixed + inset */
+      min-height: 420px;
+      margin: 16px auto;
+      max-width: min(100%, 1100px);
+      border: 1px dashed rgba(0,0,0,.12);
+      border-radius: 12px;
+      background: #fafafa;
+      overflow: visible;
+      isolation: isolate;
+    }
+    #safari-stage .safari-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none; /* lasă UI-ul tău să primească click-uri; setează individual pe elemente dacă ai nevoie */
+    }
+    /* Z-order: animals peste leaves, text cel mai sus */
+    #safari-animals-layer { z-index: 10; }
+    #safari-text-layer    { z-index: 20; }
+    #safari-leaves-layer  { z-index: 5;  }
+
+    /* ===== Helpers de poziționare (aplică-le pe copii direcți din layere) ===== */
+    .pos {
+      position: absolute;
+      transform: translate(-50%, -50%) var(--_extra, none);
+      left: 50%; top: 50%;
+    }
+    .pos-top-left     { left: 8%;  top: 10%; }
+    .pos-top-center   { left: 50%; top: 10%; }
+    .pos-top-right    { left: 92%; top: 10%; }
+    .pos-center-left  { left: 8%;  top: 50%; }
+    .pos-center       { left: 50%; top: 50%; }
+    .pos-center-right { left: 92%; top: 50%; }
+    .pos-bottom-left  { left: 8%;  top: 90%; }
+    .pos-bottom-center{ left: 50%; top: 90%; }
+    .pos-bottom-right { left: 92%; top: 90%; }
+
+    /* Spacing & scale vars (poți ajusta din JS dacă vrei) */
+    .safari-el {
+      --sx: 1; --rot: 0deg;
+      transform: translate(-50%, -50%) scale(var(--sx)) rotate(var(--rot));
+      pointer-events: auto; /* dacă vrei să fie dragabile */
+      user-select: none;
+      touch-action: none;
+    }
+
+    /* Exemple de stil rapid (poți înlocui cu conținutul real SVG/IMG din patch-uri) */
+    .safari-chip {
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 8px 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,.08);
+      font: 600 14px/1.2 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto;
+      white-space: nowrap;
+    }
+
+    /* Mobile tweaks */
+    @media (max-width: 768px) {
+      #safari-stage { min-height: 360px; }
+      .safari-el { --sx: 0.9; }
+      .pos-top-left     { left: 12%; top: 14%; }
+      .pos-top-right    { left: 88%; top: 14%; }
+      .pos-bottom-left  { left: 12%; top: 86%; }
+      .pos-bottom-right { left: 88%; top: 86%; }
+    }
+  </style>
   <!-- LCS boot stubs: prevenim "is not defined" pana se incarca istoricul -->
   <script>
   (function () {
@@ -180,6 +252,36 @@
 <body>
 <!-- Pathfinder auxiliary canvas for Paper.js -->
 <canvas id="pf-canvas" width="1" height="1" style="display:none"></canvas>
+
+  <!-- Safari Kit • Unified Stage Markup (plasat o singură dată în pagină) -->
+  <section id="safari-stage" aria-label="Safari Kit unified stage">
+    <!-- Leaves (fundal decor) -->
+    <div id="safari-leaves-layer" class="safari-layer">
+      <!-- Dacă există deja #safari-leaves în DOM, va fi mutat aici de script.
+           Placeholder vizual dacă nu există încă: -->
+      <div id="safari-leaves-placeholder" class="safari-el pos pos-top-left safari-chip" style="--sx:1;">
+        🌿 Leaves
+      </div>
+    </div>
+
+    <!-- Animals (stickere / mascote) -->
+    <div id="safari-animals-layer" class="safari-layer">
+      <!-- Dacă există #safari-animals sau #safari-giraffe, scriptul le mută aici.
+           Placeholder: -->
+      <div id="safari-animals-placeholder" class="safari-el pos pos-bottom-right safari-chip" style="--sx:1;">
+        🦒 Animals
+      </div>
+    </div>
+
+    <!-- Text (Name Preset) -->
+    <div id="safari-text-layer" class="safari-layer">
+      <!-- Dacă există #safari-name, scriptul îl mută aici.
+           Placeholder: -->
+      <div id="safari-name-placeholder" class="safari-el pos pos-top-center safari-chip" style="--sx:1;">
+        “Name” text
+      </div>
+    </div>
+  </section>
 
   <div class="topbar">
     <div class="topbar-inner">
@@ -4329,6 +4431,61 @@
   window.__PF__={ mainSVG, getSelectionDom, asSVGString, importToPaper, exportPaperToElement, pushHistory };
 })();
 </script>
+
+  <script>
+  // Safari Kit • Unifier
+  (function () {
+    const byId = (id) => document.getElementById(id);
+    const ensure = (id) => byId(id) || console.warn("[SafariKit] missing:", id);
+
+    const stage = ensure('safari-stage');
+    if (!stage) return;
+
+    const L = {
+      leavesLayer: ensure('safari-leaves-layer'),
+      animalsLayer: ensure('safari-animals-layer'),
+      textLayer: ensure('safari-text-layer'),
+    };
+
+    // Caută nodurile existente rezultate din patch-urile anterioare:
+    const candidates = {
+      leaves: ['safari-leaves'],
+      animals: ['safari-animals','safari-giraffe'],
+      text: ['safari-name']
+    };
+
+    // Mută, dacă există:
+    const moveIfFound = (ids, target, fallbackPlaceholderId, defaultClassList=[]) => {
+      const el = ids.map(byId).find(Boolean);
+      const placeholder = byId(fallbackPlaceholderId);
+      if (el && target) {
+        // curăță placeholder-ul dacă migrează conținut real
+        if (placeholder) placeholder.remove();
+        el.classList.add('safari-el','pos', ...defaultClassList);
+        target.appendChild(el);
+      } else {
+        // lasă placeholder, ca să vezi poziționarea
+      }
+    };
+
+    moveIfFound(candidates.leaves,  L.leavesLayer,  'safari-leaves-placeholder',  ['pos-top-left']);
+    moveIfFound(candidates.animals, L.animalsLayer, 'safari-animals-placeholder', ['pos-bottom-right']);
+    moveIfFound(candidates.text,    L.textLayer,    'safari-name-placeholder',    ['pos-top-center']);
+
+    // Opțional: auto-fit înălțimea stage-ului la un raport dorit (ex: 16:9) când containerul e larg
+    const desiredRatio = 9/16; // înălțime / lățime
+    const fitStage = () => {
+      const w = stage.clientWidth;
+      if (w > 640) {
+        stage.style.minHeight = Math.max(420, Math.round(w * desiredRatio)) + 'px';
+      } else {
+        stage.style.minHeight = '360px';
+      }
+    };
+    fitStage();
+    window.addEventListener('resize', fitStage, { passive: true });
+  })();
+  </script>
 
 </body>
 </html>
