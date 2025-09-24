@@ -87,8 +87,13 @@
     .eye-btn svg{ width:18px; height:18px; display:block; }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; background:#fafafa; }
-    /* Container central frumos, cu padding lateral */
-    .wrap { max-width: 1200px; margin: 16px auto 48px; padding: 0 16px; width: 100%; }
+    /* Full-bleed: permite #app să fie pe toată lățimea ecranului */
+    .wrap {
+      max-width: none;       /* elimină limita de 1200px */
+      margin: 0;             /* fără margini laterale */
+      padding: 0;            /* fără padding implicit */
+      width: 100vw;          /* ocupă toată lățimea viewport-ului */
+    }
     /* 3 coloane: stânga (controls), canvas, dreapta (dock) */
     .row {
       display: grid;
@@ -158,7 +163,7 @@
    /* === Topbar (brand) === */
    .topbar{
      position: sticky; top: 0; z-index: 50;
-     width:100%; background:#fff; border-bottom:1px solid #e5e7eb;
+     width:100vw; background:#fff; border-bottom:1px solid #e5e7eb;
      box-shadow: 0 1px 0 rgba(0,0,0,0.02);
    }
    .topbar-inner{
