@@ -3822,7 +3822,80 @@
     }, {passive:false});
   })();
   </script>
-  <!-- Rulers (top/left), non-export, toggle Ctrl+R) -->
+  <!-- Duplicate (Ctrl+D) & Delete (Del/Backspace) -->
+  <script>
+  (function(){
+    if (window.__LCS_DUP_DEL__) return; window.__LCS_DUP_DEL__=true;
+    function isEditable(el){ if(!el) return false; var t=(el.tagName||'').toLowerCase(); return ['input','textarea','select'].includes(t)||!!el.isContentEditable; }
+    function snap(){ try{ return (window.getSnapshot&&window.getSnapshot())||{} }catch(_){ return {} } }
+    function apply(s){ try{ window.applySnapshot&&window.applySnapshot(s); }catch(_){ } }
+    function selectedIds(){ var s=snap(); var sel=Array.isArray(s.selection)?s.selection:(s.selection?[s.selection]:[]); return sel; }
+    function guid(){ return 'id-'+Math.random().toString(36).slice(2,9); }
+    function push(reason){ try{ window.LCS && window.LCS.history && window.LCS.history.push(reason||'edit'); }catch(_){} }
+    function duplicateState(){
+      try{
+        if (!window.getSnapshot || !window.applySnapshot) return false;
+        var s=snap(), ids=selectedIds(); if(!ids.length) return false;
+        var newIds=[];
+        var cloneObj = (typeof structuredClone === 'function') ? structuredClone : function(obj){ return JSON.parse(JSON.stringify(obj)); };
+        function dupList(arr){ if(!Array.isArray(arr)) return; arr.forEach(function(o){ var id=o&&(o.id||o.key||o.uuid); if(id && ids.includes(id)){ var c=cloneObj(o); c.id=c.key=c.uuid=(c.id||c.key||c.uuid||guid())+'-copy'; if(typeof c.x==='number') c.x+=10; if(typeof c.y==='number') c.y+=10; arr.push(c); newIds.push(c.id||c.key||c.uuid); } }); }
+        dupList(s.stickers); dupList(s.layers);
+        if (!newIds.length) return false;
+        s.selection = newIds;
+        apply(s); push('duplicate');
+        return true;
+      }catch(_){ return false; }
+    }
+    var cssEscape = (window.CSS && window.CSS.escape) ? window.CSS.escape : function(str){ return (str||'').replace(/[^a-zA-Z0-9_-]/g, '\\$&'); };
+    function selectedDom(){
+      var els=[].slice.call(document.querySelectorAll('[data-selected="1"],[aria-selected="true"],.selected'));
+      if (els.length) return els;
+      selectedIds().forEach(function(id){
+        var el=document.querySelector('[data-lcs-id="'+id+'"],[data-id="'+id+'"],#'+cssEscape(id));
+        if (el) els.push(el);
+      });
+      return els;
+    }
+    function parseTransform(tr){ tr=tr||''; var m=tr.match(/translate\(([^)]+)\)/i); if(!m) return {tx:0,ty:0,rest:tr}; var p=m[1].split(/[, ]+/).map(Number); return {tx:p[0]||0,ty:p[1]||0,rest:tr.replace(m[0],'').trim()}; }
+    function setTranslate(el,dx,dy){
+      if (!el) return;
+      if (el.hasAttribute && el.hasAttribute('transform')){
+        var t=parseTransform(el.getAttribute('transform'));
+        var ntx=(t.tx||0)+dx, nty=(t.ty||0)+dy;
+        el.setAttribute('transform',(t.rest?t.rest+' ':'')+'translate('+ntx+','+nty+')');
+      } else if (el.style){
+        var style = window.getComputedStyle(el);
+        var matrix = style && style.transform && style.transform !== 'none' ? style.transform : el.style.transform;
+        var parsed = parseTransform(matrix || '');
+        var ntx2=(parsed.tx||0)+dx, nty2=(parsed.ty||0)+dy;
+        el.style.transform = (parsed.rest?parsed.rest+' ':'')+'translate('+ntx2+'px,'+nty2+'px)';
+        if (el.style.position === '') el.style.position = 'relative';
+      }
+    }
+    function duplicateDom(){
+      var els=selectedDom(); if(!els.length) return false;
+      els.forEach(function(el){ var c=el.cloneNode(true); setTranslate(c,10,10); el.parentNode && el.parentNode.appendChild(c); });
+      push('duplicate-dom'); return true;
+    }
+    function deleteState(){
+      try{
+        var s=snap(), ids=selectedIds(); if(!ids.length) return false;
+        function delFrom(arr){ if(!Array.isArray(arr)) return; for(var i=arr.length-1;i>=0;i--){ var id=arr[i]&&(arr[i].id||arr[i].key||arr[i].uuid); if(id && ids.includes(id)) arr.splice(i,1); } }
+        delFrom(s.stickers); delFrom(s.layers); s.selection=[];
+        apply(s); push('delete'); return true;
+      }catch(_){ return false; }
+    }
+    function deleteDom(){ var els=selectedDom(); if(!els.length) return false; els.forEach(function(el){ try{ el.remove(); }catch(_){} }); push('delete-dom'); return true; }
+    window.addEventListener('keydown', function(e){
+      if (isEditable(e.target)) return;
+      var k=(e.key||'').toLowerCase();
+      if ((e.ctrlKey||e.metaKey) && k==='d'){ e.preventDefault(); if(!duplicateState()) duplicateDom(); }
+      if (k==='delete' || k==='backspace'){ if(!e.ctrlKey && !e.metaKey){ e.preventDefault(); if(!deleteState()) deleteDom(); } }
+    }, {passive:false});
+  })();
+  </script>
+
+  <!-- Rulers (top/left), non-export, toggle Ctrl+R -->
   <style>
     #lcs-rulers{position:fixed;inset:0;pointer-events:none;z-index:99970}
     #lcs-ruler-top, #lcs-ruler-left{position:absolute;background:#fff8;backdrop-filter:saturate(0.9) blur(2px);border:1px solid #e5e7eb}
@@ -3841,47 +3914,18 @@
     var wrap=document.getElementById('lcs-rulers'),
         rt=document.getElementById('lcs-ruler-top'),
         rl=document.getElementById('lcs-ruler-left');
-
-    function svg(){
-      var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
-      a.sort(function(A,B){
-        function ar(x){
-          var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);
-          if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];
-          var r=x.getBoundingClientRect();return r.width*r.height||0;
-        }
-        return ar(B)-ar(A);
-      });
-      return a[0];
-    }
-    function unit(){
-      try{
-        var u=(window.getSnapshot && window.getSnapshot().unit) || 'mm';
-        return (u==='inch'||u==='inches')?'in':u;
-      }catch(_){ return 'mm'; }
-    }
-    function zoom(){
-      try{
-        var z=Number((window.getSnapshot && window.getSnapshot().zoom) || 1);
-        return (isFinite(z)&&z>0)?z:1;
-      }catch(_){ return 1; }
-    }
-    function clear(el){ while(el.firstChild) el.removeChild(el.firstChild); }
-
+    function svg(){var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null; a.sort(function(A,B){function ar(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];var r=x.getBoundingClientRect();return r.width*r.height||0}return ar(B)-ar(A)});return a[0];}
+    function unit(){try{var u=(window.getSnapshot&&window.getSnapshot().unit)||'mm';return (u==='inch'||u==='inches')?'in':u}catch(_){return'mm'}}
+    function zoom(){try{var z=Number((window.getSnapshot&&window.getSnapshot().zoom)||1);return (isFinite(z)&&z>0)?z:1}catch(_){return 1}}
+    function clear(el){while(el.firstChild)el.removeChild(el.firstChild)}
     function draw(){
       var s=svg(); if(!s) return;
       var u=unit(), z=zoom();
       clear(rt); clear(rl);
-
-      // scale px->unit (96px = 1in = 25.4mm)
       var px2 = (u==='in') ? (1/96) : (25.4/96);
-      // pas mare (1in / 10mm), pas mic = /10
       var majorPx = (u==='in') ? 96 : (96/25.4*10);
       majorPx *= z; var minorPx = majorPx/10;
-
       var vw = window.innerWidth, vh = window.innerHeight;
-
-      // TOP
       for (var x=0; x<vw; x+=minorPx){
         var tick=document.createElement('div'); tick.className='lcs-tick';
         tick.style.left=x+'px'; tick.style.top='0px';
@@ -3894,7 +3938,6 @@
           rt.appendChild(lab);
         }
       }
-      // LEFT
       for (var y=0; y<vh; y+=minorPx){
         var tickL=document.createElement('div'); tickL.className='lcs-tick';
         tickL.style.left='0px'; tickL.style.top=y+'px';
@@ -3908,119 +3951,13 @@
         }
       }
     }
-
-    function toggle(){
-      wrap.style.display = (wrap.style.display==='none' ? 'block' : 'none');
-      if (wrap.style.display!=='none') draw();
-    }
-
-    // Ctrl+R — Toggle rulers (capturăm și prevenim reload)
-    window.addEventListener('keydown', function(e){
-      if ((e.ctrlKey||e.metaKey) && (e.key||'').toLowerCase()==='r'){
-        e.preventDefault(); toggle();
-      }
-    }, {passive:false, capture:true});
-
+    function toggle(){wrap.style.display=(wrap.style.display==='none'?'block':'none'); if (wrap.style.display!=='none') draw();}
+    window.addEventListener('keydown', function(e){if((e.ctrlKey||e.metaKey)&&(e.key||'').toLowerCase()==='r'){e.preventDefault();toggle();}}, {passive:false,capture:true});
     window.addEventListener('resize', function(){ if(wrap.style.display!=='none') draw(); });
     window.addEventListener('lcs:zoom-changed', function(){ if(wrap.style.display!=='none') draw(); });
     window.addEventListener('lcs:state-applied', function(){ if(wrap.style.display!=='none') draw(); });
   })();
   </script>
-
-  <!-- Shortcuts Help (Ctrl+/) -->
-  <style>
-    #lcs-help{display:none;position:fixed;inset:0;z-index:99996;background:rgba(0,0,0,.35);align-items:flex-start;justify-content:center;padding-top:8vh}
-    #lcs-help .box{width:min(760px,92vw);background:#fff;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.35);padding:16px}
-    #lcs-help h3{margin:0 0 8px;font:700 16px system-ui}
-    #lcs-help ul{margin:0;padding-left:18px}
-    #lcs-help li{margin:6px 0}
-    #lcs-help .kbd{font:600 11px system-ui;background:#eef2ff;color:#111827;border:1px solid #e5e7eb;border-radius:6px;padding:2px 6px}
-  </style>
-  <div id="lcs-help" data-export="false">
-    <div class="box">
-      <h3>Shortcuts</h3>
-      <ul>
-        <li><span class="kbd">Ctrl</span> + <span class="kbd">Z</span> – Undo</li>
-        <li><span class="kbd">Ctrl</span> + <span class="kbd">Shift</span> + <span class="kbd">Z</span> / <span class="kbd">Ctrl</span> + <span class="kbd">Y</span> – Redo</li>
-        <li><span class="kbd">Ctrl</span> + <span class="kbd">S</span> – Save • <span class="kbd">Ctrl</span> + <span class="kbd">O</span> – Import</li>
-        <li><span class="kbd">Ctrl</span> + <span class="kbd">=</span>/<span class="kbd">+</span> / <span class="kbd">-</span> / <span class="kbd">0</span> – Zoom in/out/reset</li>
-        <li><span class="kbd">Ctrl</span> + <span class="kbd">K</span> – Command Palette</li>
-        <li><span class="kbd">Alt</span> + <span class="kbd">↑↓←→</span> – Align to edges • <span class="kbd">Shift</span> + <span class="kbd">A</span> – Focus Align bar</li>
-        <li><span class="kbd">Arrow</span> / <span class="kbd">Shift</span> + <span class="kbd">Arrow</span> – Nudge 1px / 10px</li>
-        <li><span class="kbd">Ctrl</span> + <span class="kbd">'</span> – Toggle Grid</li>
-      </ul>
-      <div style="margin-top:10px;text-align:right">
-        <button id="lcs-help-close" style="border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:8px 10px;cursor:pointer">Close</button>
-      </div>
-    </div>
-  </div>
-  <script>
-  (function(){
-    if (window.__LCS_HELP__) return; window.__LCS_HELP__=true;
-    var wrap=document.getElementById('lcs-help'), btn=document.getElementById('lcs-help-close');
-    function open(){ wrap.style.display='flex'; }
-    function close(){ wrap.style.display='none'; }
-    btn && (btn.onclick=close);
-    wrap.onclick=function(e){ if(e.target===wrap) close(); };
-    window.addEventListener('keydown', function(e){
-      if ((e.ctrlKey||e.metaKey) && (e.key==='/')) { e.preventDefault(); open(); }
-      if (e.key==='Escape' && wrap.style.display!=='none'){ e.preventDefault(); close(); }
-    }, {passive:false});
-  })();
-  </script>
-
-  <!-- Status bar: unit, zoom, canvas size, cursor -->
-  <style>
-    #lcs-statusbar{position:fixed;left:0;right:0;bottom:0;z-index:99980;background:#111827;color:#e5e7eb;padding:6px 10px;font:12px/1.2 system-ui;display:flex;gap:16px;align-items:center}
-    #lcs-statusbar .item{opacity:.9}
-  </style>
-  <div id="lcs-statusbar">
-    <div class="item" id="sb-unit">Unit: mm</div>
-    <div class="item" id="sb-zoom">Zoom: 100%</div>
-    <div class="item" id="sb-canvas">Canvas: —</div>
-    <div class="item" id="sb-cursor">Cursor: —</div>
-  </div>
-  <script>
-  (function(){
-    if (window.__LCS_STATUSBAR__) return; window.__LCS_STATUSBAR__=true;
-    var elU = document.getElementById('sb-unit'),
-        elZ = document.getElementById('sb-zoom'),
-        elC = document.getElementById('sb-canvas'),
-        elP = document.getElementById('sb-cursor');
-    function snap(){ try{ return (window.getSnapshot&&window.getSnapshot())||{} }catch(_){ return {} } }
-    function svg(){ var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null;
-      a.sort(function(A,B){function ar(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];var r=x.getBoundingClientRect();return r.width*r.height||0} return ar(B)-ar(A)}); return a[0] }
-    function zoom(){ var s=snap(); var z=Number(s.zoom); return (isFinite(z)&&z>0)?z:1 }
-    function unit(){ var u=(snap().unit||'mm'); return (u==='inches'||u==='inch')?'in':u }
-    function updateBasics(){
-      var s=snap(); var u=unit(); var z=zoom();
-      if (elU) elU.textContent = 'Unit: '+u;
-      if (elZ) elZ.textContent = 'Zoom: '+Math.round(z*100)+'%';
-      var w=0,h=0, sv=svg();
-      var canvas = s.canvas||{};
-      if (typeof canvas.width==='number' && typeof canvas.height==='number'){ w=canvas.width; h=canvas.height; }
-      else if (sv){ var vb=(sv.getAttribute('viewBox')||'').split(/\s+/).map(Number); if(vb.length===4&&vb.every(isFinite)){ w=vb[2]; h=vb[3]; } }
-      if (elC) elC.textContent = 'Canvas: ' + (w|0) + '×' + (h|0) + ' px';
-    }
-    function setupPointer(){
-      var sv=svg(); if(!sv) return;
-      sv.addEventListener('mousemove', function(e){
-        try{
-          var pt = sv.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY;
-          var ctm = sv.getScreenCTM(); if(!ctm) return;
-          var ip = pt.matrixTransform(ctm.inverse());
-          var u=unit(), px2 = (u==='in') ? (1/96) : (25.4/96);
-          elP && (elP.textContent = 'Cursor: ' + (ip.x*px2).toFixed(2) + ' ' + u + ', ' + (ip.y*px2).toFixed(2) + ' ' + u);
-        }catch(_){}}
-      );
-    }
-    updateBasics(); setupPointer();
-    window.addEventListener('lcs:state-applied', updateBasics);
-    window.addEventListener('lcs:zoom-changed', updateBasics);
-  })();
-  </script>
-
-  <!-- removed: duplicate Zoom UI (Fit / 100% in bottom-right) -->
 
 </body>
 </html>
