@@ -3093,5 +3093,64 @@
     }, {passive:false});
   })();
   </script>
+  <!-- Safari Kit • PATCH 2: Leaves (Monstera + Banana) -->
+  <style>
+    #safari-leaves{position:fixed;right:16px;top:236px;z-index:99990;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.15);padding:10px;min-width:220px}
+    #safari-leaves .row{display:flex;gap:6px;align-items:center;margin:6px 0}
+    #safari-leaves button{border:1px solid #e5e7eb;border-radius:8px;background:#fff;padding:6px 10px;cursor:pointer}
+  </style>
+  <div id="safari-leaves">
+    <div class="row"><button id="sf-leaf-a">🪴 Monstera</button> <input id="sf-leaf-a-color" type="color" value="#64a30b"/></div>
+    <div class="row"><button id="sf-leaf-b">🌿 Banana</button>   <input id="sf-leaf-b-color" type="color" value="#9dd38c"/></div>
+    <div class="row"><span class="small">Click pe frunză → select; Alt+drag pentru rotație (simplu).</span></div>
+  </div>
+  <script>
+  (function(){
+    if (window.__SAFARI_LEAVES__) return; window.__SAFARI_LEAVES__=true;
+    function mainSVG(){ var a=[].slice.call(document.querySelectorAll('svg')); if(!a.length) return null; a.sort(function(A,B){function ar(x){var vb=(x.getAttribute('viewBox')||'').split(/\s+/).map(Number);if(vb.length===4&&vb.every(isFinite))return vb[2]*vb[3];var r=x.getBoundingClientRect();return r.width*r.height||0} return ar(B)-ar(A)}); return a[0] }
+    function layer(){ var sv=mainSVG(); if(!sv) return null; var g=sv.querySelector('g.lcs-safari'); if(!g){ g=document.createElementNS('http://www.w3.org/2000/svg','g'); g.setAttribute('class','lcs-safari'); sv.appendChild(g); } return g; }
+    function vb(){ var sv=mainSVG(); if(!sv) return {cx:0,cy:0}; var b=(sv.getAttribute('viewBox')||'').split(/\s+/).map(Number); if(b.length===4&&b.every(isFinite)) return {cx:b[0]+b[2]/2,cy:b[1]+b[3]/2}; var r=sv.getBoundingClientRect(); return {cx:r.width/2,cy:r.height/2}; }
+    function addLeaf(kind,color){
+      var g=layer(), c=vb(); if(!g) return;
+      var grp=document.createElementNS('http://www.w3.org/2000/svg','g');
+      grp.setAttribute('class','safari leaf selected'); grp.setAttribute('data-selected','1');
+      grp.setAttribute('transform','translate('+(c.cx-120)+','+(c.cy-60)+')');
+      grp.setAttribute('data-export','true');
+      grp.setAttribute('tabindex','0');
+      if (kind==='a'){ // Monstera simplificată
+        var p=document.createElementNS('http://www.w3.org/2000/svg','path');
+        p.setAttribute('d','M120,20 C60,-10 -10,30 5,90 C25,160 120,170 170,120 C205,85 200,50 170,35 C145,22 125,30 120,20 Z M62,80 c8,-12 18,-22 30,-28 c-12,8 -22,18 -30,28 Z M88,110 c10,-10 20,-18 32,-24 c-12,8 -22,16 -32,24 Z');
+        p.setAttribute('fill', color||'#64a30b'); p.setAttribute('stroke','#2a3a12'); p.setAttribute('stroke-width','3'); grp.appendChild(p);
+      } else { // Banana leaf stilizată
+        var p2=document.createElementNS('http://www.w3.org/2000/svg','path');
+        p2.setAttribute('d','M20,120 C20,40 140,10 190,30 C160,40 130,60 110,85 C90,110 60,140 40,160 C30,150 20,140 20,120 Z');
+        p2.setAttribute('fill', color||'#9dd38c'); p2.setAttribute('stroke','#2a3a12'); p2.setAttribute('stroke-width','3'); grp.appendChild(p2);
+      }
+      g.appendChild(grp);
+      try{ window.LCS && window.LCS.history && window.LCS.history.push('leaf-'+kind); }catch(_){ }
+    }
+    document.getElementById('sf-leaf-a').onclick = function(){ addLeaf('a', document.getElementById('sf-leaf-a-color').value); };
+    document.getElementById('sf-leaf-b').onclick = function(){ addLeaf('b', document.getElementById('sf-leaf-b-color').value); };
+
+    // select + drag + rotație cu Alt
+    (function dragRotate(){
+      var sv=mainSVG(), cur=null, start=null, alt=false;
+      function onDown(e){
+        var g=e.target.closest && e.target.closest('g.safari.leaf'); if(!g) return;
+        cur=g; alt = !!e.altKey; start={x:e.clientX,y:e.clientY, tr=g.getAttribute('transform')||'translate(0,0) rotate(0)'};
+        document.querySelectorAll('g.safari').forEach(function(n){ n.removeAttribute('data-selected'); n.classList.remove('selected'); });
+        g.setAttribute('data-selected','1'); g.classList.add('selected'); e.preventDefault();
+      }
+      function parse(tr){ var t={tx:0,ty:0,rot:0}; var m=tr.match(/translate\(([^)]+)\)/i); if(m){ var a=m[1].split(/[, ]+/).map(Number); t.tx=a[0]||0; t.ty=a[1]||0; } var m2=tr.match(/rotate\(([^)]+)\)/i); if(m2){ t.rot=parseFloat(m2[1])||0; } return t; }
+      function onMove(e){ if(!cur||!start) return; var dX=e.clientX-start.x, dY=e.clientY-start.y; var t=parse(start.tr);
+        if (alt){ var ang = t.rot + dX*0.4; cur.setAttribute('transform','translate('+t.tx+','+t.ty+') rotate('+ang+')'); }
+        else { cur.setAttribute('transform','translate('+(t.tx+dX)+','+(t.ty+dY)+') rotate('+t.rot+')'); } }
+      function onUp(){ if(cur){ try{ window.LCS&&window.LCS.history&&window.LCS.history.push('leaf-move'); }catch(_){ } } cur=null; start=null; }
+      document.addEventListener('mousedown', onDown, true);
+      document.addEventListener('mousemove', onMove, true);
+      document.addEventListener('mouseup', onUp, true);
+    })();
+  })();
+  </script>
 </body>
 </html>
