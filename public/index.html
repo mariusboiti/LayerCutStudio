@@ -198,15 +198,20 @@
  </script>
 <body>
 
-<!-- === PATCH: Temp hide Outline & Hatch panels (+ Alt+Shift+H toggle) === -->
+<!-- === PATCH: Temp hide floating panels (Outline, Hatch, Kerf, DXF) + Alt+Shift+H toggle === -->
 <style id="lcs-temphide-style">
-  /* Ascunde temporar panourile încercuite în poză */
+  /* Ascunde temporar panourile flotante selectate */
   #outline-box,
-  #hatch-box { display:none !important; visibility:hidden !important; }
+  #hatch-box,
+  #kerf-box,
+  #dxf-box {
+    display:none !important;
+    visibility:hidden !important;
+  }
 </style>
 <script>
 (function(){
-  if (window.__LCS_TEMP_HIDE__) return; window.__LCS_TEMP_HIDE__ = true;
+  if (window.__LCS_TEMP_HIDE_ALL__) return; window.__LCS_TEMP_HIDE_ALL__ = true;
   var KEY = 'LCS:hideFloatPanels';  // '1' (implicit) = ascuns, '0' = vizibil
   function applyHideState(){
     var shouldHide = (localStorage.getItem(KEY) !== '0');
@@ -226,7 +231,7 @@
   applyHideState();
 })();
 </script>
-<!-- === /PATCH: Temp hide Outline & Hatch panels === -->
+<!-- === /PATCH: Temp hide floating panels === -->
 
 <!-- Pathfinder auxiliary canvas for Paper.js -->
 <canvas id="pf-canvas" width="1" height="1" style="display:none"></canvas>
