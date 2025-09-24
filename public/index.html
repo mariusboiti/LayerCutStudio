@@ -198,6 +198,36 @@
  </script>
 <body>
 
+<!-- === PATCH: Temp hide Outline & Hatch panels (+ Alt+Shift+H toggle) === -->
+<style id="lcs-temphide-style">
+  /* Ascunde temporar panourile încercuite în poză */
+  #outline-box,
+  #hatch-box { display:none !important; visibility:hidden !important; }
+</style>
+<script>
+(function(){
+  if (window.__LCS_TEMP_HIDE__) return; window.__LCS_TEMP_HIDE__ = true;
+  var KEY = 'LCS:hideFloatPanels';  // '1' (implicit) = ascuns, '0' = vizibil
+  function applyHideState(){
+    var shouldHide = (localStorage.getItem(KEY) !== '0');
+    var st = document.getElementById('lcs-temphide-style');
+    if (st) st.disabled = !shouldHide; // disabled=false => ascuns (stil activ)
+  }
+  // Toggle: Alt+Shift+H
+  window.addEventListener('keydown', function(e){
+    if (e.altKey && e.shiftKey && (e.key||'').toLowerCase()==='h'){
+      e.preventDefault();
+      var curHidden = (localStorage.getItem(KEY) !== '0');
+      localStorage.setItem(KEY, curHidden ? '0' : '1');
+      applyHideState();
+    }
+  }, {passive:false});
+  // stare inițială
+  applyHideState();
+})();
+</script>
+<!-- === /PATCH: Temp hide Outline & Hatch panels === -->
+
 <!-- Pathfinder auxiliary canvas for Paper.js -->
 <canvas id="pf-canvas" width="1" height="1" style="display:none"></canvas>
 
