@@ -5024,5 +5024,54 @@
     </script>
     <!-- === /PATCH Boolean Ops (gear-aligned minimalist) === -->
 
+  <!-- === Text Panel Plus: move Stickers spacing+font under "Adaugă bloc text" === -->
+  <style id="text-stickers-move-style">
+    /* Ascunde pachetul mutat când panoul nu e deschis */
+    #text-block-body:not(.open) .section--stickers-moved { display: none; }
+    /* Fallback: dacă folosim aria-expanded pe buton */
+    #text-block-toggle[aria-expanded="false"] ~ #text-block-body .section--stickers-moved { display: none; }
+    #text-block-toggle[aria-expanded="true"]  ~ #text-block-body .section--stickers-moved { display: block; }
+    #text-sticker-tools { margin-top: 10px; }
+  </style>
+  <script id="text-stickers-move-script">
+  (function(){
+    if (window.__TEXT_STICKERS_MOVED__) return; window.__TEXT_STICKERS_MOVED__ = true;
+    function norm(s){ return (s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim(); }
+    function leafs(){ return Array.from(document.querySelectorAll('body *')).filter(n=>!n.firstElementChild && (n.textContent||'').trim()); }
+    function byText(txt){
+      const want = norm(txt);
+      return leafs().find(n => norm(n.textContent) === want) || null;
+    }
+    function moveStickersBlock(){
+      var body = document.getElementById('text-block-body');
+      if (!body) return;
+      // găsește delimitatorii „Stickere” și „Transform”
+      var hStart = byText('Stickere');
+      var hStop  = byText('Transform');
+      if (!hStart || !hStop) return;
+      // ia elementele de după headingul „Stickere” până la „Transform”
+      var cur = hStart.parentElement.nextElementSibling;
+      var frag = document.createDocumentFragment(), moved = 0;
+      while (cur && !cur.contains(hStop)){
+        // dacă acest nod este chiar containerul cu headingul „Transform”, oprește
+        var txt = norm(cur.textContent);
+        if (txt.includes(norm('Transform'))) break;
+        var next = cur.nextElementSibling;
+        frag.appendChild(cur);
+        moved++; cur = next;
+      }
+      if (!moved) return;
+      var wrap = document.createElement('div');
+      wrap.id = 'text-sticker-tools';
+      wrap.className = 'section--stickers-moved';
+      wrap.appendChild(frag);
+      body.appendChild(wrap);
+    }
+    function ready(fn){ if(document.readyState !== 'loading') fn(); else document.addEventListener('DOMContentLoaded', fn, {once:true}); }
+    ready(moveStickersBlock);
+    // dacă UI-ul se rehidratează, mai încearcă o dată
+    setTimeout(moveStickersBlock, 600);
+  })();
+  </script>
 </body>
 </html>
