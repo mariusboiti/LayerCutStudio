@@ -5171,5 +5171,102 @@
     document.addEventListener('DOMContentLoaded', tryRun, { once:true });
   })();
   </script>
+  <!-- UI • Typo toggle under "Adaugă bloc text" + remove duplicate Font size spinner -->
+  <script>
+  (function(){
+    if (window.__LCS_TYPO_TOGGLE__) return; window.__LCS_TYPO_TOGGLE__=true;
+
+    // Caută un nod care conține textul (case-insensitive)
+    function findByTextContains(root, frag){
+      frag = (frag||'').toLowerCase().trim();
+      const nodes = Array.from((root||document).querySelectorAll('label,div,span,button,h1,h2,h3,h4'));
+      return nodes.find(n => (n.textContent||'').toLowerCase().includes(frag)) || null;
+    }
+    // Urcă la containerul "rând" (label + control)
+    function rowOf(el){
+      if (!el) return null;
+      let cur = el;
+      for (let i=0;i<4 && cur;i++){
+        const s = getComputedStyle(cur);
+        if (s.display === 'flex' || s.display === 'grid') return cur;
+        cur = cur.parentElement;
+      }
+      return el.parentElement || el;
+    }
+
+    const LABELS = [
+      'spațiere rânduri',
+      'font size',
+      'spațiere litere'
+    ];
+
+    let rows = [];
+    let addBtn = null;
+
+    function collect(){
+      rows = [];
+      // Butonul / header-ul "Adaugă bloc text"
+      addBtn = findByTextContains(document, 'adaugă bloc text');
+      // Găsește rândurile după etichete (conține)
+      LABELS.forEach(txt=>{
+        const lab = findByTextContains(document, txt);
+        const row = rowOf(lab);
+        if (row && !rows.includes(row)){
+          row.setAttribute('data-lcs-typo-row','1');
+          rows.push(row);
+        }
+      });
+      // Elimină dublura: rândul de sub "Font size" dacă este spinner fără etichetă
+      const labFS  = findByTextContains(document, 'font size');
+      const rowFS  = rowOf(labFS);
+      const nextFS = rowFS && rowFS.nextElementSibling;
+      if (rowFS && nextFS){
+        const hasLabel = !!nextFS.querySelector('label');
+        const hasInput = !!nextFS.querySelector('input, [role="spinbutton"]');
+        if (!hasLabel && hasInput){
+          // aproape sigur este spinnerul cu cercul negru; îl eliminăm
+          nextFS.remove();
+        }
+      }
+    }
+
+    function setCollapsed(collapsed){
+      rows.forEach(r => { r.style.display = collapsed ? 'none' : ''; });
+      if (addBtn){
+        addBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      }
+      localStorage.setItem('LCS:typoOpen', collapsed ? '0' : '1');
+    }
+
+    function currentCollapsed(){
+      // dacă primul rând e ascuns, considerăm collapsed
+      const r = rows[0];
+      return r ? (getComputedStyle(r).display === 'none') : true;
+    }
+
+    function init(){
+      collect();
+      // implicit: ASCUNS, dar dacă a fost deschis ultima dată, păstrăm
+      const saved = localStorage.getItem('LCS:typoOpen');
+      const shouldOpen = (saved === '1');
+      setCollapsed(!shouldOpen);
+
+      if (addBtn && !addBtn.__lcsBound){
+        addBtn.__lcsBound = true;
+        addBtn.addEventListener('click', function(e){
+          // doar toggle; evităm acțiuni parazite
+          e.preventDefault(); e.stopPropagation();
+          collect();
+          setCollapsed( !currentCollapsed() ? true : false ); // toggle
+        }, true);
+      }
+    }
+
+    const obs = new MutationObserver(init);
+    obs.observe(document.documentElement, { childList:true, subtree:true });
+    window.addEventListener('load', init, { once:true });
+    document.addEventListener('DOMContentLoaded', init, { once:true });
+  })();
+  </script>
 </body>
 </html>
