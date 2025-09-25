@@ -1,18 +1,28 @@
 ﻿<!DOCTYPE html>
 <html lang="ro">
 <head>
-  <!-- PATCH: Canvas gol la pornire + buton în sidebar care afișează form-ul de text (variantă safe) -->
-  <style id="lcs-empty-safe-css">
-    .lcs-hide { display:none !important; }
-    .lcs-textbtn-wrap { position:sticky; top:8px; z-index:5; margin:0 0 10px 0; }
-    .lcs-textbtn {
+  <!-- PATCH: UN SINGUR buton + panou sub el (Font + Text 1/2/3) -->
+  <style id="lcs-textpanel-css">
+    .lcs-textbtn-wrap{
+      position:sticky; top:8px; z-index:5; margin:0 0 10px 0;
+      background:linear-gradient(#fff,#fff) padding-box;
+    }
+    #lcs-textbtn{
       display:flex; align-items:center; gap:8px;
       width:100%; padding:10px 12px;
       border:1px solid #e5e7eb; border-radius:10px; background:#fff;
       cursor:pointer; font:600 14px system-ui;
       box-shadow:0 1px 2px rgba(0,0,0,.04);
     }
-    .lcs-textbtn:hover { background:#f8fafc; }
+    #lcs-textbtn:hover{ background:#f8fafc; }
+    #lcs-textpanel{
+      display:none; /* toggle pe buton */
+      border:1px solid #e5e7eb; border-radius:12px; background:#fff;
+      padding:10px; gap:10px; margin-bottom:10px;
+    }
+    #lcs-textpanel .lcs-textpanel-title{
+      font:600 13px system-ui; color:#111827; margin-bottom:6px;
+    }
   </style>
   <!-- PATCH: remove Pathfinder panel permanently -->
   <style id="kill-pathfinder-css">
@@ -219,115 +229,125 @@
    })();
  </script>
 <body>
-  <script id="lcs-empty-safe-js">
-    (function(){
-      if (window.__LCS_EMPTY_SAFE__) return; window.__LCS_EMPTY_SAFE__ = true;
-      function $(s, r) { return (r || document).querySelector(s); }
-      function $$(s, r) { return Array.from((r || document).querySelectorAll(s)); }
+  <script id="lcs-textpanel-js">
+  (function(){
+    if (window.__LCS_TEXTPANEL__) return; window.__LCS_TEXTPANEL__=true;
+    const $=(s,r)=> (r||document).querySelector(s);
+    const $$=(s,r)=> Array.from((r||document).querySelectorAll(s));
 
-      // încearcă să identifice coloana din stânga pe baza conținutului
-      function findSidebar() {
-        const app = document.getElementById('app') || document.body;
-        const areas = $$('#app div, #app section, #app aside', app);
-        const hints = ['Font', 'Text (rând', 'Stickere', 'Transform', 'Unități', 'Shortcuturi'];
-        let best = null, scoreBest = -1;
-        areas.forEach(n => {
-          const txt = (n.textContent || '').toLowerCase();
-          let sc = 0;
-          hints.forEach(h => { if (txt.indexOf(h.toLowerCase()) >= 0) sc++; });
-          sc += Math.min(3, n.querySelectorAll('input, select, label, button').length / 12);
-          if (sc > scoreBest) { scoreBest = sc; best = n; }
-        });
-        return best;
-      }
+    function findSidebar(){
+      const app = $('#app') || document.body;
+      const hints = ['Font','Text (rând','Text 2','Text 3','Stickere','Transform','Unități'];
+      let best=null, scoreBest=-1;
+      $$('#app div, #app section, #app aside', app).forEach(n=>{
+        const txt=(n.textContent||'').toLowerCase();
+        let sc=0;
+        hints.forEach(h=>{ if(txt.includes(h.toLowerCase())) sc++; });
+        sc += Math.min(3, n.querySelectorAll('input,select,label,button,textarea').length/12);
+        sc -= Math.min(2, n.querySelectorAll('svg').length/4);
+        if (sc>scoreBest){ scoreBest=sc; best=n; }
+      });
+      return best;
+    }
 
-      // caută blocurile pentru Font/Text(rând1/2/3)
-      function locateTextGroups(sidebar) {
-        if (!sidebar) return [];
-        const groups = [];
-        const patterns = [
-          /^font$/i,
-          /text\s*\(rând\s*1\)/i,
-          /text\s*2/i,
-          /text\s*3/i
-        ];
-        patterns.forEach(rx => {
-          const lbl = $$('label,div,span', sidebar).find(el => rx.test((el.textContent || '').trim()));
-          if (lbl) {
-            const box = lbl.closest('div,section,fieldset') || lbl.parentElement;
-            if (box && !groups.includes(box)) groups.push(box);
-          }
-        });
-        return groups;
-      }
-
-      // goliște câmpurile text (după label sau placeholder)
-      function clearTextInputs(sidebar) {
-        if (!sidebar) return;
-        // 1) după placeholder
-        const ph = [
-          /^text\b.*rând\s*1/i,
-          /^text\s*2/i,
-          /^text\s*3/i
-        ];
-        const inputs = $$('input[type="text"]', sidebar);
-        let cleared = 0;
-        inputs.forEach(inp => {
-          const p = (inp.getAttribute('placeholder') || '').trim();
-          if (ph.some(rx => rx.test(p))) {
-            try {
-              inp.value = '';
-              inp.dispatchEvent(new Event('input', { bubbles: true }));
-              inp.dispatchEvent(new Event('change', { bubbles: true }));
-              cleared++;
-            } catch (_) {}
-          }
-        });
-        // 2) fallback: primele 3 inputuri text dacă nu am găsit nimic după placeholder
-        if (!cleared) {
-          inputs.slice(0, 3).forEach(inp => {
-            try {
-              inp.value = '';
-              inp.dispatchEvent(new Event('input', { bubbles: true }));
-              inp.dispatchEvent(new Event('change', { bubbles: true }));
-            } catch (_) {}
-          });
+    function locateGroups(sidebar){
+      if(!sidebar) return [];
+      const rx = [
+        /^font$/i,
+        /text\s*\(rând\s*1\)/i,
+        /text\s*2/i,
+        /text\s*3/i
+      ];
+      const groups=[];
+      rx.forEach(r=>{
+        const lbl = $$('label,div,span', sidebar).find(el=> r.test((el.textContent||'').trim()));
+        if (lbl){
+          const box = lbl.closest('div,section,fieldset') || lbl.parentElement;
+          if (box && !groups.includes(box)) groups.push(box);
         }
-      }
+      });
+      return groups;
+    }
 
-      function insertButton(sidebar, groups) {
-        if (!sidebar || !groups.length) return;
-        // ascunde grupurile de font/text
-        groups.forEach(g => g.classList.add('lcs-hide'));
-        // inserează butonul sus
-        const wrap = document.createElement('div');
-        wrap.className = 'lcs-textbtn-wrap';
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'lcs-textbtn';
-        btn.textContent = '➕ Adaugă bloc text';
-        wrap.appendChild(btn);
-        sidebar.insertBefore(wrap, sidebar.firstChild);
-        btn.addEventListener('click', () => {
-          groups.forEach(g => g.classList.remove('lcs-hide'));
-          wrap.remove();
-        });
-      }
+    function clearTextInputs(sidebar){
+      const inputs = $$('input[type="text"]', sidebar);
+      // goli doar cele cu placeholder de tip Text (rând 1/2/3) sau, fallback, primele 3
+      const phrx=[/rând\s*1/i,/text\s*2/i,/text\s*3/i];
+      let n=0;
+      inputs.forEach(inp=>{
+        const ph=(inp.getAttribute('placeholder')||'');
+        if (phrx.some(rx=>rx.test(ph)) || n<3){
+          try{ inp.value=''; inp.dispatchEvent(new Event('input',{bubbles:true})); inp.dispatchEvent(new Event('change',{bubbles:true})); }catch(_){ }
+          n+=1;
+        }
+      });
+    }
 
-      function init() {
-        const sidebar = findSidebar();
-        if (!sidebar) return;
-        clearTextInputs(sidebar);               // canvas gol (nu mai avem text)
-        const groups = locateTextGroups(sidebar);
-        if (groups.length) insertButton(sidebar, groups);
-      }
+    function ensureUI(sidebar, groups){
+      if (!sidebar || !groups.length) return;
 
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init, { once: true });
-      } else {
-        init();
-      }
-      window.addEventListener('load', init, { once: true });
+      // dacă există deja, nu mai dublăm
+      if ($('#lcs-textbtn-wrap', sidebar)) return;
+
+      // 1) container buton
+      const wrap=document.createElement('div');
+      wrap.className='lcs-textbtn-wrap';
+      wrap.id='lcs-textbtn-wrap';
+      const btn=document.createElement('button');
+      btn.type='button'; btn.id='lcs-textbtn';
+      btn.innerHTML='➕ Adaugă bloc text';
+      wrap.appendChild(btn);
+      sidebar.insertBefore(wrap, sidebar.firstChild);
+
+      // 2) panou sub buton (mutăm efectiv grupurile acolo)
+      const panel=document.createElement('div');
+      panel.id='lcs-textpanel';
+      const title=document.createElement('div');
+      title.className='lcs-textpanel-title';
+      title.textContent='Bloc text';
+      panel.appendChild(title);
+      sidebar.insertBefore(panel, wrap.nextSibling);
+
+      // Mută grupurile (Font + Text 1/2/3) în panou (o singură dată)
+      groups.forEach(g=>{
+        if (!g.dataset || g.dataset.lcsMoved !== '1'){
+          panel.appendChild(g);
+          if (g.dataset) g.dataset.lcsMoved='1';
+        }
+      });
+
+      // 3) toggle panel la click (NU mai ascundem butonul)
+      btn.addEventListener('click', ()=>{
+        panel.style.display = (panel.style.display === 'none' || !panel.style.display) ? 'block' : 'none';
+      });
+
+      // pornire: panel ascuns
+      panel.style.display='none';
+    }
+
+    function initOnce(){
+      const sidebar = findSidebar();
+      if (!sidebar) return;
+      const groups  = locateGroups(sidebar);
+      if (!groups.length) return;
+      clearTextInputs(sidebar);  // canvas gol la pornire
+      ensureUI(sidebar, groups); // buton UNIC + panou sub el
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initOnce, {once:true});
+    } else { initOnce(); }
+    window.addEventListener('load', initOnce, {once:true});
+  })();
+  </script>
+
+  <!-- cleanup: elimină varianta veche pentru a evita dubluri -->
+  <script>
+    (function(){
+      var oldCss=document.getElementById('lcs-empty-safe-css');
+      var oldJs =document.getElementById('lcs-empty-safe-js');
+      try{ oldCss && oldCss.remove(); }catch(_){ }
+      try{ oldJs  && oldJs.remove();  }catch(_){ }
     })();
   </script>
   <script id="kill-pathfinder-js">
