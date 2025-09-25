@@ -10,7 +10,8 @@
       cursor:pointer; font:600 14px system-ui; box-shadow:0 1px 2px rgba(0,0,0,.04);
     }
     #lcs-textbtn:hover{ background:#f8fafc; }
-    .lcs-collapsed{ display:none !important; }
+    /* Grupurile marcate ca „collapsible” sunt ascunse când au clasa lcs-collapsed */
+    .lcs-collapsible.lcs-collapsed{ display:none !important; }
   </style>
   <!-- PATCH: remove Pathfinder panel permanently -->
   <style id="kill-pathfinder-css">
@@ -222,6 +223,7 @@
     if (window.__LCS_TEXTPANEL_V2__) return; window.__LCS_TEXTPANEL_V2__=true;
     const $=(s,r)=> (r||document).querySelector(s);
     const $$=(s,r)=> Array.from((r||document).querySelectorAll(s));
+    const KEY='LCS:textPanel:open';
 
     function findSidebar(){
       const app = $('#app') || document.body;
@@ -235,15 +237,32 @@
 
     function locateGroups(sidebar){
       if(!sidebar) return [];
-      const rx=[/^font$/i,/text\s*\(rând\s*1\)/i,/text\s*2/i,/text\s*3/i];
       const groups=[];
-      rx.forEach(r=>{
-        const lbl = $$('label,div,span', sidebar).find(el=> r.test((el.textContent||'').trim()));
-        if (lbl){
-          const box = lbl.closest('div,section,fieldset') || lbl.parentElement;
-          if (box && !groups.includes(box)) groups.push(box);
+      // 1) Font (căutăm un label „Font” sau un select cu multe opțiuni de font)
+      {
+        const fontLabel = $$('label,div,span', sidebar).find(el=> /^font$/i.test((el.textContent||'').trim()));
+        let fontBox = fontLabel && (fontLabel.closest('div,section,fieldset') || fontLabel.parentElement);
+        if (!fontBox){
+          const fontSelect = $('select', sidebar);
+          if (fontSelect && fontSelect.options && fontSelect.options.length>5)
+            fontBox = fontSelect.closest('div,section,fieldset') || fontSelect.parentElement;
         }
-      }); return groups;
+        if (fontBox) groups.push(fontBox);
+      }
+      // 2) Text 1/2/3 după placeholder/label
+      const rxTexts=[/rând\s*1/i,/text\s*2/i,/text\s*3/i];
+      rxTexts.forEach(rx=>{
+        // întâi după label
+        let box = ( $$('label,div,span', sidebar).find(el=> rx.test((el.textContent||'').trim())) );
+        if (box) box = box.closest('div,section,fieldset') || box.parentElement;
+        // fallback după input placeholder
+        if (!box){
+          const inp = $$('input[type="text"]', sidebar).find(i => rx.test((i.getAttribute('placeholder')||'')));
+          if (inp) box = inp.closest('div,section,fieldset') || inp.parentElement;
+        }
+        if (box && !groups.includes(box)) groups.push(box);
+      });
+      return groups.filter(Boolean);
     }
 
     function clearTextInputs(sidebar){
@@ -267,12 +286,18 @@
       const btn=document.createElement('button'); btn.type='button'; btn.id='lcs-textbtn'; btn.textContent='➕ Adaugă bloc text';
       wrap.appendChild(btn);
       first.parentNode.insertBefore(wrap, first);
-      // Ascunde inițial toate grupurile vizate (fără a le muta)
-      groups.forEach(g=> g.classList.add('lcs-collapsed'));
-      // Toggle pe click
+      // Marcare și starea inițială
+      const shouldOpen = localStorage.getItem(KEY)==='1';
+      groups.forEach(g=>{
+        g.classList.add('lcs-collapsible');
+        g.classList.toggle('lcs-collapsed', !shouldOpen);
+      });
+      // Toggle pe click + persist
       btn.addEventListener('click', ()=>{
         const hidden = groups.every(g=> g.classList.contains('lcs-collapsed'));
-        groups.forEach(g=> g.classList.toggle('lcs-collapsed', !hidden));
+        const newOpen = hidden; // dacă toate-s ascunse, acum le deschidem
+        groups.forEach(g=> g.classList.toggle('lcs-collapsed', !newOpen));
+        try{ localStorage.setItem(KEY, newOpen ? '1':'0'); }catch(_){ }
       });
     }
 
@@ -284,6 +309,9 @@
     }
     if (document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', init, {once:true}); } else { init(); }
     window.addEventListener('load', init, {once:true});
+    // Dacă sidebarul e re-montat de React, păstrăm starea ascunsă inițială
+    const mo = new MutationObserver(()=>init());
+    mo.observe(document.body,{childList:true,subtree:true});
   })();
   </script>
 
