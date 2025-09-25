@@ -426,80 +426,98 @@
   })();
   </script>
 
-  <!-- UI • Move spacing/size controls under “Adaugă bloc text” -->
-  <style>
-    /* opțional: un subtitlu mic pentru grupul mutat */
-    #text-spacing-title { font: 600 12px/1.2 system-ui, Segoe UI, Arial; color: #111827; margin: 10px 0 6px; }
+  <!-- UI • Move spacing/size controls under “Adaugă bloc text” (robust, sincron cu toggle) -->
+  <style id="lcs-move-spacing-css">
+    #lcs-text-spacing-wrap{ margin:10px 0 2px; }
+    #lcs-text-spacing-title{ font:600 12px/1.2 system-ui,Segoe UI,Arial; color:#111827; margin:0 0 6px; }
   </style>
-  <script>
+  <script id="lcs-move-spacing-js">
   (function(){
-    if (window.__LCS_MOVE_TEXT_SPACING__) return; window.__LCS_MOVE_TEXT_SPACING__ = true;
-    function lc(txt){ return (txt || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
-    function ready(fn){ if (document.readyState !== 'loading') fn(); else document.addEventListener('DOMContentLoaded', fn); }
-    ready(function(){
-      var toggle = document.getElementById('text-block-toggle');
-      var body   = document.getElementById('text-block-body');
-      if (!toggle || !body) return; // nu facem nimic dacă nu există blocul
+    if (window.__LCS_MOVE_TEXT_SPACING_V2__) return; window.__LCS_MOVE_TEXT_SPACING_V2__=true;
+    const KEY='LCS:textPanel:open';
+    const NORM = s => (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+    const $  = (s,r)=> (r||document).querySelector(s);
+    const $$ = (s,r)=> Array.from((r||document).querySelectorAll(s));
 
-      // Caută etichetele “Spațiere rânduri / Font size / Spațiere litere”
-      var labels = Array.prototype.slice.call(document.querySelectorAll('label'));
-      function byLabelStartsWith(prefixes){
-        prefixes = [].concat(prefixes);
-        return labels.find(function(l){
-          var t = lc(l.textContent || '');
-          return prefixes.some(function(p){ return t.indexOf(p) === 0; });
-        });
-      }
-      var lRow = byLabelStartsWith(['spatiere randuri', 'spatiere randu']); // toleranță
-      var fRow = byLabelStartsWith(['font size', 'fontsize']);
-      var kRow = byLabelStartsWith(['spatiere litere']);
-
-      // Creează (o singură dată) un subtitlu pentru grupul mutat
-      if (!document.getElementById('text-spacing-title')){
-        var h = document.createElement('div'); h.id = 'text-spacing-title'; h.textContent = 'Spațieri & mărime';
-        body.appendChild(h);
-      }
-
-      function moveRowFromLabel(lbl){
-        if (!lbl) return false;
-        var row = lbl.closest('.row') || lbl.parentElement;
-        if (row && !body.contains(row)){
-          body.appendChild(row);
-          return true;
-        }
-        return false;
-      }
-      var moved = 0;
-      moved += moveRowFromLabel(lRow) ? 1 : 0;   // Spațiere rânduri
-      moved += moveRowFromLabel(fRow) ? 1 : 0;   // Font size
-      moved += moveRowFromLabel(kRow) ? 1 : 0;   // Spațiere litere
-
-      // În multe UI-uri, stepper-ul de mărime (cu valoare numerică) e pe un rând separat,
-      // încercăm să-l prindem robust: căutăm un input number pe același rând cu butoane step.
-      if (fRow){
-        var row = fRow.closest('.row') || fRow.parentElement;
-        // dacă există un rând frate imediat următor cu input number + butoane, îl mutăm și pe acela
-        var sibling = row && row.nextElementSibling;
-        if (sibling && (sibling.querySelector('input[type="number"]') || sibling.querySelector('button')) && !body.contains(sibling)){
-          body.appendChild(sibling); moved++;
+    function findSidebar(){
+      const app = $('#app') || document.body;
+      let best=null,score=-1;
+      $$('#app div, #app section, #app aside', app).forEach(n=>{
+        const sc = n.querySelectorAll('label,input,select,button,textarea').length;
+        if (sc>score){ score=sc; best=n; }
+      });
+      return best;
+    }
+    function findTextGroups(sidebar){
+      // Grupurile marcate anterior ca fiind “collapsible”
+      return $$('.lcs-collapsible', sidebar);
+    }
+    function findRowByLabel(sidebar, starts){
+      const labels = $$('label', sidebar);
+      for (const l of labels){
+        const t = NORM(l.textContent);
+        if (starts.some(s => t.startsWith(s))) {
+          const row = l.closest('.row') || l.parentElement;
+          if (row) return row;
         }
       }
-
-      // Dacă tema schimbă label-urile (ex. traduceri), mai facem o încercare fallback:
-      if (!moved){
-        // Găsim secțiunea “Stickere”, apoi luăm următoarele două-trei rânduri cu inputuri
-        var stickerHdr = Array.prototype.slice.call(document.querySelectorAll('*'))
-          .find(function(n){ return lc(n.textContent || '') === 'stickere'; });
-        if (stickerHdr){
-          var container = stickerHdr.parentElement;
-          // colectăm rânduri ce conțin inputuri numerice/text
-          var rows = Array.prototype.slice.call(container.querySelectorAll('.row,div'))
-            .filter(function(r){ return r.querySelector && r.querySelector('input'); })
-            .slice(0, 4);
-          rows.forEach(function(r){ if (!body.contains(r)) body.appendChild(r); });
+      return null;
+    }
+    function ensureWrap(sidebar){
+      // plasăm chiar după ultimul grup din “Adaugă bloc text”
+      const groups = findTextGroups(sidebar);
+      if (!groups.length) return null;
+      const last = groups[groups.length-1];
+      let wrap = $('#lcs-text-spacing-wrap', sidebar);
+      if (!wrap){
+        wrap = document.createElement('div');
+        wrap.id = 'lcs-text-spacing-wrap';
+        wrap.className = 'lcs-collapsible';
+        // starea inițială respectă butonul
+        const open = (localStorage.getItem(KEY)==='1');
+        wrap.classList.toggle('lcs-collapsed', !open);
+        const h = document.createElement('div');
+        h.id='lcs-text-spacing-title';
+        h.textContent='Spațieri & mărime';
+        wrap.appendChild(h);
+        last.insertAdjacentElement('afterend', wrap);
+      }
+      return wrap;
+    }
+    function moveOnce(){
+      const sb = findSidebar(); if (!sb) return;
+      const wrap = ensureWrap(sb); if (!wrap) return;
+      // caută cele trei rânduri după etichete (tolerant la diacritice)
+      const r1 = findRowByLabel(sb, ['spatiere randuri','spatiere randu']);
+      const r2 = findRowByLabel(sb, ['font size','fontsize']);
+      const r3 = findRowByLabel(sb, ['spatiere litere','spatiere litera']);
+      [r1,r2,r3].forEach(row=>{
+        if (row && !wrap.contains(row)) wrap.appendChild(row);
+      });
+      // dacă “Font size” are un rând frate imediat (stepper numeric), îl mutăm și pe acela
+      if (r2){
+        const sib = r2.nextElementSibling;
+        if (sib && (sib.querySelector('input[type="number"]') || sib.querySelector('button')) && !wrap.contains(sib)){
+          wrap.appendChild(sib);
         }
       }
-    });
+    }
+    function syncWithToggle(){
+      // dacă utilizatorul apasă butonul, vrem ca wrap-ul nostru să urmeze starea
+      const sb = findSidebar(); if (!sb) return;
+      const wrap = $('#lcs-text-spacing-wrap', sb); if (!wrap) return;
+      const open = (localStorage.getItem(KEY)==='1');
+      wrap.classList.toggle('lcs-collapsed', !open);
+    }
+    function boot(){
+      moveOnce();
+      syncWithToggle();
+    }
+    if (document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot, {once:true}); else boot();
+    window.addEventListener('load', boot, {once:true});
+    const mo = new MutationObserver(()=>boot());
+    mo.observe(document.body,{childList:true,subtree:true});
+    window.addEventListener('storage', (e)=>{ if(e.key===KEY) syncWithToggle(); });
   })();
   </script>
 
