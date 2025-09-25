@@ -1,13 +1,22 @@
 ﻿<!DOCTYPE html>
 <html lang="ro">
 <head>
+  <!-- UI: ascunde blocul Font/Text1/Text2/Text3 până la click pe buton -->
+  <style id="lcs-hide-font-text-css">
+    /* container-ins marker pentru zona ascunsă */
+    .lcs-collapsible { display: block; }
+    .lcs-collapsible.lcs-collapsed { display: none !important; }
+    .lcs-textbtn-wrap{ position:sticky; top:8px; z-index:10; margin:0 0 10px 0; }
+    #lcs-textbtn{ width:100%; padding:10px 12px; border:1px solid #e5e7eb; border-radius:10px; background:#fff; cursor:pointer; font:600 14px system-ui; box-shadow:0 1px 2px rgba(0,0,0,.05); display:flex; align-items:center; gap:8px; }
+    #lcs-textbtn:hover{ background:#f8fafc; }
+  </style>
   <!-- UI: UN SINGUR buton + toggle pe grupurile Font/Text fără a muta noduri React -->
   <style id="lcs-textpanel-css-v2">
-    .lcs-textbtn-wrap{ position:sticky; top:8px; z-index:5; margin:0 0 10px 0; }
+    .lcs-textbtn-wrap{ position:sticky; top:8px; z-index:10; margin:0 0 10px 0; }
     #lcs-textbtn{
       display:flex; align-items:center; gap:8px; width:100%;
       padding:10px 12px; border:1px solid #e5e7eb; border-radius:10px; background:#fff;
-      cursor:pointer; font:600 14px system-ui; box-shadow:0 1px 2px rgba(0,0,0,.04);
+      cursor:pointer; font:600 14px system-ui; box-shadow:0 1px 2px rgba(0,0,0,.05);
     }
     #lcs-textbtn:hover{ background:#f8fafc; }
     /* Grupurile marcate ca „collapsible” sunt ascunse când au clasa lcs-collapsed */
@@ -217,7 +226,109 @@
      } catch(e){}
    })();
  </script>
- <body>
+<body>
+  <script id="lcs-hide-font-text-js">
+  (function(){
+    if (window.__LCS_FONTBLOCK_HIDE__) return; window.__LCS_FONTBLOCK_HIDE__=true;
+    const KEY='LCS:textPanel:open';
+    const $=(s,r)=> (r||document).querySelector(s);
+    const $$=(s,r)=> Array.from((r||document).querySelectorAll(s));
+
+    function findSidebar(){
+      // Alege coloana cea mai din stânga cu multe controale
+      const cands = $$('aside, [role="complementary"], .sidebar, #app div, #app section, body > div');
+      let best=null, score=-1, minLeft=Infinity;
+      cands.forEach(n=>{
+        const rect = n.getBoundingClientRect(); if (!rect || rect.width>520) return;
+        const sc = n.querySelectorAll('label,input,select,button,textarea').length;
+        if (sc>15 && rect.left < minLeft){ minLeft=rect.left; score=sc; best=n; }
+      });
+      return best;
+    }
+
+    // Găsește începutul (Font) și capătul (Stickere) în sidebar
+    function anchors(sb){
+      if(!sb) return {};
+      const textOf = el => (el.textContent||'').trim().toLowerCase();
+      // start: zona cu select de font sau label “font”
+      let startBox = $$('label,div,section,fieldset', sb).find(el => /^font$/i.test(textOf(el)));
+      if (startBox) startBox = startBox.closest('div,section,fieldset') || startBox;
+      if (!startBox){
+        const sel = $('select', sb);
+        if (sel && sel.options && sel.options.length>5) startBox = sel.closest('div,section,fieldset') || sel.parentElement;
+      }
+      // end: “Stickere” (sau echivalent)
+      let endBox = $$('label,div,section,fieldset', sb).find(el => /^stickere/i.test(textOf(el)));
+      if (endBox) endBox = endBox.closest('div,section,fieldset') || endBox;
+      return {startBox, endBox};
+    }
+
+    function collectBetween(startBox, endBox){
+      if(!startBox || !endBox || startBox===endBox) return [];
+      const parent = startBox.parentElement;
+      if (!parent || parent!==endBox.parentElement) {
+        // dacă nu sunt frați direcți, întoarce fallback: doar startBox + următoarele 3 secțiuni
+        const list=[startBox], sibs=[];
+        let n=startBox.nextElementSibling;
+        let k=0; while(n && k<6){ sibs.push(n); n=n.nextElementSibling; k++; }
+        return list.concat(sibs);
+      }
+      const result=[];
+      let cur = startBox;
+      while (cur && cur!==endBox){ result.push(cur); cur=cur.nextElementSibling; }
+      return result;
+    }
+
+    function clearTextInputs(sb){
+      // golește primele 3 input-uri text (rând 1/2/3) dacă există
+      const txts = $$('input[type="text"]', sb).slice(0,3);
+      txts.forEach(inp=>{
+        try {
+          inp.value='';
+          inp.dispatchEvent(new Event('input',{bubbles:true}));
+          inp.dispatchEvent(new Event('change',{bubbles:true}));
+        } catch(_){ }
+      });
+    }
+
+    function ensureToggle(sb, blocks){
+      if(!sb || !blocks.length) return;
+      if ($('#lcs-textbtn-wrap', sb)) return;
+      const wrap=document.createElement('div'); wrap.className='lcs-textbtn-wrap'; wrap.id='lcs-textbtn-wrap';
+      const btn=document.createElement('button'); btn.type='button'; btn.id='lcs-textbtn'; btn.innerHTML='➕ Adaugă bloc text';
+      wrap.appendChild(btn);
+      sb.insertBefore(wrap, blocks[0]); // înainte de primul bloc
+      // marchează blocurile ca “collapsible” și setează starea inițială
+      const open = localStorage.getItem(KEY)==='1';
+      blocks.forEach(b=>{ b.classList.add('lcs-collapsible'); b.classList.toggle('lcs-collapsed', !open); });
+      btn.addEventListener('click', ()=>{
+        const hidden = blocks.every(b=> b.classList.contains('lcs-collapsed'));
+        const willOpen = hidden;
+        blocks.forEach(b=> b.classList.toggle('lcs-collapsed', !willOpen));
+        try {
+          localStorage.setItem(KEY, willOpen?'1':'0');
+        } catch(_){ }
+      });
+    }
+
+    function run(){
+      const sb = findSidebar(); if(!sb) return;
+      const {startBox, endBox} = anchors(sb);
+      if(!startBox){ return; } // nu am găsit zona Font; nu intervenim
+      const blocks = endBox ? collectBetween(startBox, endBox) : [startBox];
+      if (!blocks.length) return;
+      clearTextInputs(sb);          // canvas gol la start
+      ensureToggle(sb, blocks);     // pune butonul și ascunde implicit
+    }
+
+    // pornește + reexecută la schimbări (React re-render)
+    const boot = ()=> run();
+    if (document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot, {once:true}); else boot();
+    window.addEventListener('load', boot, {once:true});
+    const mo = new MutationObserver(()=>run());
+    mo.observe(document.body,{childList:true,subtree:true});
+  })();
+  </script>
   <script id="lcs-textpanel-js-v2">
   (function(){
     if (window.__LCS_TEXTPANEL_V2__) return; window.__LCS_TEXTPANEL_V2__=true;
