@@ -1,17 +1,6 @@
 ﻿<!DOCTYPE html>
 <html lang="ro">
 <head>
-  <!-- PATCH: Start with empty canvas + sidebar button to reveal text form -->
-  <style id="lcs-empty-canvas-css">
-    .lcs-hide { display:none !important; }
-    .lcs-sidebar-btn {
-      display:flex; align-items:center; gap:8px;
-      width:100%; padding:10px 12px; border:1px solid #e5e7eb;
-      border-radius:10px; background:#fff; cursor:pointer; font:600 14px system-ui;
-      box-shadow:0 1px 2px rgba(0,0,0,.04);
-    }
-    .lcs-sidebar-btn:hover { background:#f8fafc; }
-  </style>
   <!-- PATCH: remove Pathfinder panel permanently -->
   <style id="kill-pathfinder-css">
     #lcs-pathfinder { display:none !important; visibility:hidden !important; }
@@ -217,96 +206,6 @@
    })();
  </script>
 <body>
-  <script id="lcs-empty-canvas-js">
-  (function(){
-    if (window.__LCS_EMPTY_CANVAS__) return; window.__LCS_EMPTY_CANVAS__=true;
-
-    // Utils
-    const $$ = (s, r)=> Array.from((r||document).querySelectorAll(s));
-
-    function findApp(){ return document.getElementById('app') || document.body; }
-
-    // Găsește sidebar-ul (formularul din stânga)
-    function findSidebar(root){
-      const hints = ['Font','Text (rând','Stickere','Transform','Unități'];
-      let best=null, scoreBest=-1;
-      $$('div,section,aside', root).forEach(n=>{
-        const txt=(n.textContent||'').toLowerCase();
-        let sc=0;
-        hints.forEach(h=>{ if(txt.indexOf(h.toLowerCase())>=0) sc++; });
-        sc += Math.min(3, n.querySelectorAll('input,select,label,button').length/12);
-        sc -= Math.min(2, n.querySelectorAll('svg').length/4);
-        if (sc>scoreBest) { scoreBest=sc; best=n; }
-      });
-      return best;
-    }
-
-    // Găsește grupurile de form pentru text și font
-    function pickTextFormGroups(sidebar){
-      const groups = [];
-      // Căutăm label-uri cu aceste texte și luăm containerul lor
-      const keys = [/^font$/i, /text\s*\(rând\s*1\)/i, /text\s*2/i, /text\s*3/i];
-      keys.forEach(rx=>{
-        const lbl = $$('label,div,span', sidebar).find(n=>rx.test((n.textContent||'').trim()));
-        if (lbl){
-          const box = lbl.closest('div,section,fieldset') || lbl.parentElement;
-          if (box && !groups.includes(box)) groups.push(box);
-        }
-      });
-      return groups;
-    }
-
-    // Curăță canvas-ul: goleşte câmpurile de text și declanșează re-randarea
-    function clearTexts(sidebar){
-      if (!sidebar) return;
-      const textInputs = $$('input[type="text"]', sidebar).slice(0,3); // primele 3 câmpuri de text
-      textInputs.forEach(inp=>{
-        try{
-          inp.value='';
-          inp.dispatchEvent(new Event('input',{bubbles:true}));
-          inp.dispatchEvent(new Event('change',{bubbles:true}));
-        }catch(_){}
-      });
-    }
-
-    function insertButton(sidebar, groups){
-      if (!sidebar || !groups.length) return;
-      // Creează un container pentru buton la începutul sidebar-ului
-      const holder=document.createElement('div');
-      holder.style.cssText='position:sticky;top:8px;z-index:5;background:linear-gradient(#fff,#fff) padding-box;margin:0 0 10px 0;';
-      const btn=document.createElement('button');
-      btn.type='button';
-      btn.className='lcs-sidebar-btn';
-      btn.innerHTML='➕ Adaugă bloc text';
-      holder.appendChild(btn);
-      sidebar.insertBefore(holder, sidebar.firstChild);
-
-      // Ascunde grupurile până la click
-      groups.forEach(g=>g.classList.add('lcs-hide'));
-      btn.addEventListener('click', ()=>{
-        groups.forEach(g=>g.classList.remove('lcs-hide'));
-        holder.remove(); // butonul dispare după ce a fost folosit
-      });
-    }
-
-    function init(){
-      const app=findApp();
-      const sidebar=findSidebar(app);
-      if (!sidebar) return;
-      // 1) Golim canvas-ul prin curățarea textelor (fără să stricăm gridul)
-      clearTexts(sidebar);
-      // 2) Ascundem Font/Text(1/2/3) și adăugăm butonul pentru afișare
-      const groups=pickTextFormGroups(sidebar);
-      if (groups.length) insertButton(sidebar, groups);
-    }
-
-    // rulează la load + dacă UI-ul se (re)montează dinamic
-    init();
-    const mo=new MutationObserver(()=>init());
-    mo.observe(document.body,{childList:true,subtree:true});
-    window.addEventListener('load', init, {once:true});
-  })();
-  </script>
   <script id="kill-pathfinder-js">
     (function(){
       if (window.__KILL_PATHFINDER__) return; window.__KILL_PATHFINDER__ = true;
