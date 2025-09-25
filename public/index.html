@@ -5091,5 +5091,123 @@
     setTimeout(moveStickersBlock, 600);
   })();
   </script>
+  <!-- ============================================= -->
+  <!--  UI: Move Typography Controls under Text Block -->
+  <!-- ============================================= -->
+  <script>
+  (function(){
+    if (window.__LCS_MOVE_TYPO__) return; window.__LCS_MOVE_TYPO__=true;
+
+    // Caută un nod după conținut text (ignora spații/diacritice minuscule vs. majuscule)
+    function findByText(root, txt){
+      txt = (txt||'').toLowerCase().trim();
+      const all = Array.from((root||document).querySelectorAll('label,div,span,button'));
+      return all.find(n => (n.textContent||'').toLowerCase().trim() === txt) || null;
+    }
+    function findByTextContains(root, frag){
+      frag = (frag||'').toLowerCase().trim();
+      const all = Array.from((root||document).querySelectorAll('label,div,span,button'));
+      return all.find(n => (n.textContent||'').toLowerCase().includes(frag)) || null;
+    }
+    // Urcă la un "row" rezonabil (un container direct care conține label + input)
+    function rowOf(el){
+      if(!el) return null;
+      let cur = el;
+      for (let i=0;i<4 && cur;i++){
+        const s = getComputedStyle(cur);
+        if (s.display === 'flex' || s.display === 'grid') return cur;
+        cur = cur.parentElement;
+      }
+      return el.parentElement || el;
+    }
+    // Creează (o singură dată) panoul de sub „Adaugă bloc text”
+    function ensureTextPanel(){
+      // găsește butonul/heading-ul "Adaugă bloc text"
+      const addBtn = findByTextContains(document, 'adaugă bloc text');
+      if (!addBtn) return null;
+      // dacă există deja un panou imediat după, îl folosim
+      let panel = addBtn.nextElementSibling;
+      // dacă panoul imediat următor nu e „al nostru”, îl creăm
+      if (!panel || !panel.classList || !panel.classList.contains('lcs-text-panel')){
+        panel = document.createElement('div');
+        panel.className = 'lcs-text-panel';
+        panel.setAttribute('data-text-panel','1');
+        panel.style.marginTop = '8px';
+        panel.style.borderTop = '1px solid #e5e7eb';
+        panel.style.paddingTop = '8px';
+        addBtn.parentElement.insertBefore(panel, addBtn.nextSibling);
+      }
+      return panel;
+    }
+
+    function cloneIntoPanel(){
+      const panel = ensureTextPanel();
+      if (!panel) return false;
+
+      // Etichetele pe care le căutăm (RO exact cum apar în UI)
+      const L = {
+        spacingRows: 'Spațiere rânduri',
+        fontSize: 'Font size',
+        letterSpacing: 'Spațiere litere'
+      };
+
+      // găsește rândurile (label + input) după etichete
+      const rowSpacing   = rowOf(findByTextContains(document, L.spacingRows));
+      const rowFontSize  = rowOf(findByTextContains(document, L.fontSize));
+      const rowLetters   = rowOf(findByTextContains(document, L.letterSpacing));
+
+      // în unele UI-uri, spinnerul „140” e rândul imediat după "Font size"
+      let rowFontSpinner = null;
+      if (rowFontSize && rowFontSize.nextElementSibling){
+        const sib = rowFontSize.nextElementSibling;
+        // heuristica: conține un input/stepper numeric
+        if (sib.querySelector('input,button,[role="spinbutton"]')) rowFontSpinner = sib;
+      }
+
+      // helper: clonează + ascunde originalul (ca să nu se piardă state-ul vizual)
+      function cloneAndHide(row){
+        if (!row) return null;
+        if (row.dataset && row.dataset.__movedTypo === '1') return row.__cloneRef || null;
+        const c = row.cloneNode(true);
+        row.style.display = 'none';
+        row.dataset.__movedTypo = '1';
+        row.__cloneRef = c;
+        return c;
+      }
+
+      // creează un container în panou pentru tipografie (o singură dată)
+      let box = panel.querySelector('.lcs-typo-box');
+      if (!box){
+        box = document.createElement('div');
+        box.className = 'lcs-typo-box';
+        box.style.display = 'grid';
+        box.style.gridTemplateColumns = '1fr';
+        box.style.gap = '8px';
+        panel.appendChild(box);
+      }
+
+      // injectăm în ordinea dorită
+      const blocks = [ rowSpacing, rowFontSize, rowFontSpinner, rowLetters ]
+        .map(cloneAndHide)
+        .filter(Boolean);
+
+      // evită dublarea dacă deja au fost injectate
+      const hasSomething = blocks.some(n => box.contains(n));
+      if (!hasSomething){
+        blocks.forEach(n => box.appendChild(n));
+      }
+      return true;
+    }
+
+    // încearcă imediat și și la mutații (UI-ul e React)
+    function tryRun(){
+      if (cloneIntoPanel()) obs && obs.disconnect();
+    }
+    const obs = new MutationObserver(() => tryRun());
+    obs.observe(document.documentElement, { childList:true, subtree:true });
+    window.addEventListener('load', tryRun, { once:true });
+    document.addEventListener('DOMContentLoaded', tryRun, { once:true });
+  })();
+  </script>
 </body>
 </html>
