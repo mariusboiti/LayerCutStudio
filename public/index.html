@@ -426,6 +426,83 @@
   })();
   </script>
 
+  <!-- UI • Move spacing/size controls under “Adaugă bloc text” -->
+  <style>
+    /* opțional: un subtitlu mic pentru grupul mutat */
+    #text-spacing-title { font: 600 12px/1.2 system-ui, Segoe UI, Arial; color: #111827; margin: 10px 0 6px; }
+  </style>
+  <script>
+  (function(){
+    if (window.__LCS_MOVE_TEXT_SPACING__) return; window.__LCS_MOVE_TEXT_SPACING__ = true;
+    function lc(txt){ return (txt || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+    function ready(fn){ if (document.readyState !== 'loading') fn(); else document.addEventListener('DOMContentLoaded', fn); }
+    ready(function(){
+      var toggle = document.getElementById('text-block-toggle');
+      var body   = document.getElementById('text-block-body');
+      if (!toggle || !body) return; // nu facem nimic dacă nu există blocul
+
+      // Caută etichetele “Spațiere rânduri / Font size / Spațiere litere”
+      var labels = Array.prototype.slice.call(document.querySelectorAll('label'));
+      function byLabelStartsWith(prefixes){
+        prefixes = [].concat(prefixes);
+        return labels.find(function(l){
+          var t = lc(l.textContent || '');
+          return prefixes.some(function(p){ return t.indexOf(p) === 0; });
+        });
+      }
+      var lRow = byLabelStartsWith(['spatiere randuri', 'spatiere randu']); // toleranță
+      var fRow = byLabelStartsWith(['font size', 'fontsize']);
+      var kRow = byLabelStartsWith(['spatiere litere']);
+
+      // Creează (o singură dată) un subtitlu pentru grupul mutat
+      if (!document.getElementById('text-spacing-title')){
+        var h = document.createElement('div'); h.id = 'text-spacing-title'; h.textContent = 'Spațieri & mărime';
+        body.appendChild(h);
+      }
+
+      function moveRowFromLabel(lbl){
+        if (!lbl) return false;
+        var row = lbl.closest('.row') || lbl.parentElement;
+        if (row && !body.contains(row)){
+          body.appendChild(row);
+          return true;
+        }
+        return false;
+      }
+      var moved = 0;
+      moved += moveRowFromLabel(lRow) ? 1 : 0;   // Spațiere rânduri
+      moved += moveRowFromLabel(fRow) ? 1 : 0;   // Font size
+      moved += moveRowFromLabel(kRow) ? 1 : 0;   // Spațiere litere
+
+      // În multe UI-uri, stepper-ul de mărime (cu valoare numerică) e pe un rând separat,
+      // încercăm să-l prindem robust: căutăm un input number pe același rând cu butoane step.
+      if (fRow){
+        var row = fRow.closest('.row') || fRow.parentElement;
+        // dacă există un rând frate imediat următor cu input number + butoane, îl mutăm și pe acela
+        var sibling = row && row.nextElementSibling;
+        if (sibling && (sibling.querySelector('input[type="number"]') || sibling.querySelector('button')) && !body.contains(sibling)){
+          body.appendChild(sibling); moved++;
+        }
+      }
+
+      // Dacă tema schimbă label-urile (ex. traduceri), mai facem o încercare fallback:
+      if (!moved){
+        // Găsim secțiunea “Stickere”, apoi luăm următoarele două-trei rânduri cu inputuri
+        var stickerHdr = Array.prototype.slice.call(document.querySelectorAll('*'))
+          .find(function(n){ return lc(n.textContent || '') === 'stickere'; });
+        if (stickerHdr){
+          var container = stickerHdr.parentElement;
+          // colectăm rânduri ce conțin inputuri numerice/text
+          var rows = Array.prototype.slice.call(container.querySelectorAll('.row,div'))
+            .filter(function(r){ return r.querySelector && r.querySelector('input'); })
+            .slice(0, 4);
+          rows.forEach(function(r){ if (!body.contains(r)) body.appendChild(r); });
+        }
+      }
+    });
+  })();
+  </script>
+
   <!-- Fix: elimină scripturile paper.js cu SRI care pot fi blocate și pune varianta fără integrity -->
   <script>
     (function(){
